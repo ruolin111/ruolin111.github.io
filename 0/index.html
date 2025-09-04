@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project 0 — Perspectives & The Dolly Zoom</title>
+  <meta name="description" content="Exploring perspective, focal length/zoom, and the center of projection through portraits, architecture, and the classic dolly zoom." />
+  <style>
+    :root{
+      --bg: #0b0c0f;
+      --panel: #12141a;
+      --text: #e6e8ef;
+      --muted: #a9afbf;
+      --accent: #6d8dff;
+      --accent-2:#7ee787;
+      --ring: #2b3a87;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 18px;
+      --max: 1100px;
+    }
+    @media (prefers-color-scheme: light){
+      :root{
+        --bg:#f7f8fb; --panel:#ffffff; --text:#171923; --muted:#5f6b85; --ring:#dfe6ff;
+        --shadow: 0 10px 24px rgba(0, 20, 80, .08);
+      }
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font:16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color:var(--text);
+      background:radial-gradient(1200px 800px at 90% -10%, rgba(109,141,255,.15), transparent 60%), var(--bg);
+    }
+    .wrap{max-width:var(--max); margin-inline:auto; padding:28px 20px 72px}
+    header{
+      position:sticky; top:0; z-index:5; backdrop-filter:saturate(1.3) blur(8px);
+      background: color-mix(in oklab, var(--bg), transparent 30%);
+      border-bottom:1px solid color-mix(in oklab, var(--ring), transparent 70%);
+    }
+    .nav{max-width:var(--max); margin:0 auto; padding:12px 20px; display:flex; gap:16px; align-items:center; justify-content:space-between}
+    .brand{font-weight:750; letter-spacing:.2px}
+    .tabs{display:flex; gap:8px; flex-wrap:wrap}
+    .tabs a{
+      text-decoration:none; color:var(--text); font-weight:600; font-size:.95rem; padding:8px 12px; border-radius:999px;
+      border:1px solid color-mix(in oklab, var(--ring), transparent 60%);
+    }
+    .tabs a:hover{background: color-mix(in oklab, var(--panel), transparent 10%);}
+    .hero{
+      margin-top:32px; padding:28px; border-radius:var(--radius);
+      background:linear-gradient(180deg, color-mix(in oklab, var(--panel), transparent 0%) 0%, color-mix(in oklab, var(--panel), transparent 8%) 100%);
+      border:1px solid color-mix(in oklab, var(--ring), transparent 55%); box-shadow:var(--shadow);
+    }
+    h1{font-size:clamp(1.8rem, 3vw + .8rem, 3rem); line-height:1.15; margin:.3em 0 .2em}
+    p.lead{font-size:1.05rem; color:var(--muted); margin-top:.2em}
+    .section{margin-top:42px}
+    .card{
+      background:var(--panel); border:1px solid color-mix(in oklab, var(--ring), transparent 55%);
+      border-radius:var(--radius); box-shadow:var(--shadow); padding:20px;
+    }
+    .kicker{display:inline-block; font-size:.78rem; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-2); font-weight:700}
+    h2{margin:.3em 0 .6em; font-size:clamp(1.2rem, 1.2rem + 1vw, 1.8rem)}
+    h3{margin:.2em 0 .6em; font-size:1.05rem; color:var(--muted)}
+    .grid{
+      display:grid; gap:14px;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+    @media (max-width:760px){ .grid{grid-template-columns:1fr} }
+    figure{
+      margin:0; border-radius:16px; overflow:hidden; position:relative; border:1px solid color-mix(in oklab, var(--ring), transparent 60%);
+      background: #0e1016;
+    }
+    .media{
+      width:100%; height:100%; aspect-ratio: 3/2; object-fit:cover; display:block; filter:saturate(1.05) contrast(1.02);
+    }
+    figcaption{
+      padding:10px 12px; font-size:.95rem; color:var(--muted); background:linear-gradient(180deg, transparent, rgba(0,0,0,.12));
+    }
+    .badge{
+      position:absolute; top:10px; left:10px; padding:6px 10px; border-radius:999px; font-size:.8rem; font-weight:800;
+      background:color-mix(in oklab, var(--bg), transparent 10%); color:var(--text);
+      border:1px solid color-mix(in oklab, var(--ring), transparent 40%); box-shadow:0 8px 18px rgba(0,0,0,.18);
+    }
+    .note{
+      margin-top:12px; font-size:.95rem; color:var(--muted);
+      border-left:3px solid var(--accent); padding-left:12px;
+    }
+    .solo{
+      display:block; width:100%; max-width:900px; margin:8px auto 0; border-radius:16px; border:1px solid color-mix(in oklab, var(--ring), transparent 55%);
+      box-shadow:var(--shadow); background:#0e1016;
+    }
+    .solo .media{aspect-ratio: 16/9}
+    footer{
+      margin-top:56px; padding-top:18px; border-top:1px dashed color-mix(in oklab, var(--ring), transparent 60%); color:var(--muted)
+    }
+    a.inline{color:var(--accent); text-decoration:none; border-bottom:1px dotted color-mix(in oklab, var(--accent), white 40%);}
+    a.inline:hover{opacity:.9}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="nav">
+      <div class="brand">CS180 · Project 0</div>
+      <div class="tabs" role="navigation" aria-label="Section links">
+        <a href="#overview">Overview</a>
+        <a href="#part1">Part 1</a>
+        <a href="#part2">Part 2</a>
+        <a href="#part3">Part 3</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <!-- Overview -->
+    <section id="overview" class="hero card">
+      <span class="kicker">Overview</span>
+      <h1>Perspectives &amp; The Dolly Zoom</h1>
+      <p class="lead">
+        Become friends with your camera and every pixel it captures. In this project, you’ll build intuition for
+        how perspective and focal length (zoom) interact with the center of projection to change how we perceive a scene.
+        You’ll compare two portrait techniques, explore architectural “compression,” and recreate the classic dolly zoom.
+      </p>
+    </section>
+
+    <!-- Part 1 -->
+    <section id="part1" class="section card">
+      <span class="kicker">Part 1</span>
+      <h2>Selfie — The Wrong Way vs. The Right Way</h2>
+      <h3>Step back, zoom in, match face size — and watch perspective distortion disappear.</h3>
+      <div class="grid" role="group" aria-label="Close portrait comparison">
+        <figure>
+          <img class="media" src="/media/selfie_wrong.HEIC" alt="Close-up selfie taken too near the face, showing exaggerated nose and perspective distortion." loading="lazy" />
+          <div class="badge">Wrong Way</div>
+          <figcaption>Very close distance · No zoom · Typical distorted selfie.</figcaption>
+        </figure>
+        <figure>
+          <img class="media" src="/media/selfie_right.HEIC" alt="Portrait taken from farther away with zoom, with more natural facial proportions." loading="lazy" />
+          <div class="badge">Right Way</div>
+          <figcaption>Step back several feet · Zoom in · Face size matched to the first image.</figcaption>
+        </figure>
+      </div>
+      <p class="note">Tip: Keep the face the <em>same size</em> in both shots to isolate how distance + zoom affect perspective.</p>
+    </section>
+
+    <!-- Part 2 -->
+    <section id="part2" class="section card">
+      <span class="kicker">Part 2</span>
+      <h2>Architectural Perspective Compression</h2>
+      <h3>Zoomed-in views “stack” distance; wide-angle views exaggerate depth.</h3>
+      <div class="grid" role="group" aria-label="Street or pathway comparison">
+        <figure>
+          <img class="media" src="/media/zoomed_street.HEIC" alt="Zoomed-in street view from far away, buildings look flattened and stacked together." loading="lazy" />
+          <div class="badge">Far + Zoom</div>
+          <figcaption>Long focal length from far away — background appears compressed.</figcaption>
+        </figure>
+        <figure>
+          <!-- /media/normal_street.HEIC  (closer + no zoom) -->
+          <img class="media" src="/media/normal_street.HEIC" alt="Closer wide-angle street view, the scene appears deeper with more separation between objects." loading="lazy" />
+          <div class="badge">Close + Wide</div>
+          <figcaption>Walk forward · No zoom — depth feels more spacious and elongated.</figcaption>
+        </figure>
+      </div>
+      <p class="note">Match overall scene size between images so the difference you perceive is largely perspective, not framing.</p>
+    </section>
+
+    <!-- Part 3 -->
+    <section id="part3" class="section card">
+      <span class="kicker">Part 3</span>
+      <h2>The Dolly Zoom (“Vertigo Shot”)</h2>
+      <h3>Dolly the camera back while zooming in so your subject stays the same size but the background stretches.</h3>
+      <figure class="solo" aria-labelledby="dollycap">
+        <img class="media" src="/media/dolly_zoom.GIF" alt="Animated GIF demonstrating the dolly zoom: subject size stable while background scale changes dramatically." loading="lazy" />
+        <figcaption id="dollycap">Combined from 4–8 (or more) still frames shot while moving the camera and changing focal length.</figcaption>
+      </figure>
+      <p class="note">
+        Pro tip: Pick a scene with strong background lines (hallways, shelves, street lamps, stuffed animals) to make the
+        effect read clearly.
+      </p>
+    </section>
+
+    <footer class="wrap">
+      <p>CS180 · Fall 2025 · Computer Vision &amp; Computational Photography</p>
+      <p>Built with semantic HTML, responsive CSS, and attention to accessibility (alt text, landmarks, reduced motion friendly).</p>
+      <p><a class="inline" href="#overview">Back to top ↑</a></p>
+    </footer>
+  </main>
+</body>
+</html>
