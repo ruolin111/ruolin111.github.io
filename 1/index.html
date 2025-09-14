@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project — Prokudin-Gorskii Colorization</title>
+  <meta name="description" content="Aligning digitized glass plate images (B,G,R) to reconstruct color photos with pyramids, edge features, auto-cropping, contrast, and white balance." />
+  <style>
+    :root{
+      --bg:#0b0c0f; --panel:#12141a; --text:#e6e8ef; --muted:#a9afbf;
+      --accent:#6d8dff; --accent-2:#7ee787; --ring:#2b3a87;
+      --shadow:0 10px 28px rgba(0,0,0,.35);
+      --radius:18px; --max:1100px;
+    }
+    @media (prefers-color-scheme: light){
+      :root{
+        --bg:#f7f8fb; --panel:#ffffff; --text:#171923; --muted:#5f6b85; --ring:#dfe6ff;
+        --shadow:0 10px 24px rgba(0,20,80,.08);
+      }
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Inter,"Helvetica Neue",Arial;
+      color:var(--text);
+      background: radial-gradient(1100px 700px at 90% -10%, rgba(109,141,255,.15), transparent 60%), var(--bg);
+    }
+    header{
+      position:sticky; top:0; z-index:5; backdrop-filter:saturate(1.3) blur(8px);
+      background: color-mix(in oklab, var(--bg), transparent 30%);
+      border-bottom:1px solid color-mix(in oklab, var(--ring), transparent 70%);
+    }
+    .nav{max-width:var(--max); margin:0 auto; padding:12px 20px; display:flex; gap:16px; align-items:center; justify-content:space-between}
+    .brand{font-weight:750; letter-spacing:.2px; text-decoration:none; color:var(--text)}
+    .brand:hover{color:var(--accent)}
+    .tabs{display:flex; gap:8px; flex-wrap:wrap}
+    .tabs a{ text-decoration:none; color:var(--text); font-weight:600; font-size:.95rem; padding:8px 12px; border-radius:999px;
+      border:1px solid color-mix(in oklab, var(--ring), transparent 60%); }
+    .tabs a:hover{background: color-mix(in oklab, var(--panel), transparent 10%);}
+    .wrap{max-width:var(--max); margin-inline:auto; padding:28px 20px 72px}
+    .hero, .card{
+      background:linear-gradient(180deg, color-mix(in oklab, var(--panel), transparent 0%) 0%, color-mix(in oklab, var(--panel), transparent 8%) 100%);
+      border:1px solid color-mix(in oklab, var(--ring), transparent 55%); box-shadow:var(--shadow);
+      border-radius:var(--radius); padding:22px;
+    }
+    h1{font-size:clamp(1.8rem, 3vw + .8rem, 3rem); line-height:1.15; margin:.3em 0 .2em}
+    h2{margin:.2em 0 .4em; font-size:clamp(1.2rem, 1.2rem + 1vw, 1.8rem)}
+    h3{margin:.2em 0 .4em; font-size:1.05rem; color:var(--muted)}
+    .kicker{display:inline-block; font-size:.78rem; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-2); font-weight:700}
+    .section{margin-top:42px}
+    .note{margin-top:10px; color:var(--muted); border-left:3px solid var(--accent); padding-left:12px; font-size:.95rem}
+
+    /* media blocks */
+    .pair{display:grid; gap:12px; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start}
+    @media (max-width:760px){ .pair{grid-template-columns:1fr} }
+    figure{margin:0; border-radius:16px; overflow:hidden; position:relative; border:1px solid color-mix(in oklab, var(--ring), transparent 60%); background:#0e1016;}
+    img.media{display:block; width:100%; height:auto; filter:saturate(1.03) contrast(1.02);}
+    figcaption{padding:10px 12px; font-size:.95rem; color:var(--muted); background:linear-gradient(180deg, transparent, rgba(0,0,0,.12));}
+    .badge{
+      position:absolute; top:10px; left:10px; padding:6px 10px; border-radius:999px; font-size:.8rem; font-weight:800;
+      background:color-mix(in oklab, var(--bg), transparent 10%); color:var(--text);
+      border:1px solid color-mix(in oklab, var(--ring), transparent 40%); box-shadow:0 8px 18px rgba(0,0,0,.18);
+    }
+
+    /* results grid */
+    .results{display:grid; gap:20px; grid-template-columns:repeat(1, minmax(0, 1fr));}
+    .result-card{padding:18px}
+    .title-row{display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:8px}
+    .title-row .name{font-weight:800; font-size:1.05rem}
+    .offsets{color:var(--muted); font-size:.92rem}
+    footer{margin-top:56px; padding-top:18px; border-top:1px dashed color-mix(in oklab, var(--ring), transparent 60%); color:var(--muted)}
+    a.inline{color:var(--accent); text-decoration:none; border-bottom:1px dotted color-mix(in oklab, var(--accent), white 40%);}
+    a.inline:hover{opacity:.9}
+    .subtle{color:var(--muted)}
+    .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background:color-mix(in oklab, var(--panel), white 6%); padding:.1rem .4rem; border:1px solid color-mix(in oklab, var(--ring), transparent 55%); border-radius:6px}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="nav">
+      <!-- Link back to your portfolio home -->
+      <a class="brand" href="../index.html">CS180 · Project — Prokudin-Gorskii</a>
+      <div class="tabs" role="navigation" aria-label="Section links">
+        <a href="#overview">Overview</a>
+        <a href="#approach">Approach</a>
+        <a href="#bells">Bells &amp; Whistles</a>
+        <a href="#results">Results</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <!-- Overview -->
+    <section id="overview" class="hero">
+      <span class="kicker">Overview</span>
+      <h1>Reconstructing Color from Prokudin-Gorskii Glass Plates</h1>
+      <p class="lead">
+        Each plate contains three vertically stacked exposures through <em>blue, green,</em> and <em>red</em> filters (BGR).
+        I split the plate, aligned G and R to B using a coarse-to-fine pyramid with edge features, then applied
+        automatic border cropping, contrast stretching, and gray-world white balance to produce the final color image.
+      </p>
+    </section>
+
+    <!-- Approach -->
+    <section id="approach" class="section card">
+      <span class="kicker">Method</span>
+      <h2>Alignment &amp; Post-processing Pipeline</h2>
+      <ul>
+        <li><strong>Split BGR:</strong> divide the plate into equal thirds (B, G, R) by height.</li>
+        <li><strong>Coarse-to-fine alignment:</strong> build an image pyramid (scale ×0.5). At each level, align using NCC over a small search window and propagate offsets to the next finer scale. Final offsets are applied to G and R relative to B.</li>
+        <li><strong>Feature space:</strong> instead of raw intensities, align on <em>Sobel gradient magnitude</em> to reduce bias from brightness/color differences between channels.</li>
+        <li><strong>Auto-crop:</strong> detect border transitions by scanning row/column edge-energy profiles and cropping where persistent high-gradient runs indicate entry into the valid image region.</li>
+        <li><strong>Contrast &amp; White balance:</strong> percentile stretch per channel (robust to outliers), followed by gray-world scaling to neutralize scene illumination color cast.</li>
+      </ul>
+      <p class="note">Implementation highlights: vectorized NCC; robust median-absolute-deviation thresholds for border finding; float-domain processing; and conservative parameter choices so one setting works across images.</p>
+    </section>
+
+        <!-- Bells & Whistles -->
+    <section id="bells" class="section card">
+      <span class="kicker">Bells &amp; Whistles</span>
+      <h2>Automatic Enhancements — What &amp; Why</h2>
+
+      <h3>1) Automatic Cropping (border removal)</h3>
+      <p>
+        Borders arise because the three channels don’t perfectly overlap and because the original plates include margins. I compute a gray-scale edge map (Sobel magnitude), then form
+        <em>row</em> and <em>column percentile profiles</em>. Within a central “clean” band I estimate a robust baseline using the median and MAD.
+        I scan from each side and find the first sustained run where the profile exceeds <span class="kbd">baseline + k · MAD</span>, capped by a maximum crop fraction. This detects the transition from quiet border to textured content and avoids over-cropping smooth skies/walls.
+      </p>
+      <p class="subtle">Why it helps: border misalignments and colored fringes corrupt match scores and distract visually; cropping improves both alignment and aesthetics.</p>
+
+      <h3>2) Automatic Contrast (percentile stretch)</h3>
+      <p>
+        Historical scans often have compressed dynamic range. For each RGB channel, I map the <span class="kbd">p<sub>lo</sub>–p<sub>hi</sub></span> percentile interval (e.g., 1–99%) to [0,1] and clip outside.
+        This preserves mid-tones while gently expanding shadows/highlights; it’s robust to a few hot pixels or plate blemishes.
+      </p>
+      <p class="subtle">Why it helps: recovers punch without guessing a global gamma or relying on manually tuned levels.</p>
+
+      <h3>3) Automatic White Balance (gray-world)</h3>
+      <p>
+        I compute the mean of each RGB channel and scale them so their means match. The gray-world assumption (“average scene is gray”) is crude but effective on many outdoor scenes.
+        Because alignment already reduces color leakage between channels, this step cleans residual casts (e.g., cyan/sepia).
+      </p>
+
+      <h3>4) Better Color Mapping (channel-wise normalization)</h3>
+      <p>
+        To reduce the “vintage filter” look in the raw composites, I implemented a <strong>channel-wise gain normalization</strong>.
+        For each channel (R, G, B), I compute the <em>trimmed mean intensity</em> (ignoring ~1% of extremes) and calculate a scaling factor that brings each channel’s mean closer to a neutral gray target.
+        Gains are clipped between 0.5× and 2× to avoid extreme corrections, and the adjusted result is blended with the original using a <code>strength</code> parameter.
+      </p>
+      <p>
+        This successfully removes strong color biases — for example, portraits that looked tinted red or cyan become more realistic, with skin tones, foliage, and stonework closer to natural colors.
+      </p>
+
+      <h3>5) Better Features for Alignment (Sobel magnitude)</h3>
+      <p>
+        Raw intensities differ across channels (e.g., red robe vs. blue background), which can mislead NCC. I align in <strong>edge space</strong> using Sobel magnitude:
+        edges are largely co-located across channels even when colors differ, yielding a sharper, more stable similarity landscape. I also crop the borders before scoring to
+        avoid energy from non-overlapping margins.
+      </p>
+      <p class="subtle">Net effect: faster convergence at coarse scales and fewer catastrophic misalignments on challenging plates like <em>emir</em>.</p>
+    </section>
+
+
+    <!-- Results -->
+    <section id="results" class="section">
+      <span class="kicker">Results</span>
+      <h2>Before vs. After (with Offsets)</h2>
+
+      <div class="results">
+        <!-- 17 images: input in ./part1_images/, enhanced in ./enhanced_bw/, all .jpg -->
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Adobe</div><div class="offsets">B: (22, 19) · R: (67, 15)</div></div>
+          <div class="pair" role="group" aria-label="Adobe before and after">
+            <figure><img class="media" src="./part1_images/adobe.jpg" alt="Adobe: original glass-plate composite (uncorrected)." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/adobe.jpg" alt="Adobe: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Boy</div><div class="offsets">B: (45, −14) · R: (102, −11)</div></div>
+          <div class="pair" role="group" aria-label="Boy before and after">
+            <figure><img class="media" src="./part1_images/boy.jpg" alt="Boy: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/boy.jpg" alt="Boy: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Camel</div><div class="offsets">B: (18, 14) · R: (81, 38)</div></div>
+          <div class="pair" role="group" aria-label="Camel before and after">
+            <figure><img class="media" src="./part1_images/camel.jpg" alt="Camel: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/camel.jpg" alt="Camel: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Cathedral</div><div class="offsets">B: (5, 2) · R: (12, 3)</div></div>
+          <div class="pair" role="group" aria-label="Cathedral before and after">
+            <figure><img class="media" src="./part1_images/cathedral.jpg" alt="Cathedral: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/cathedral.jpg" alt="Cathedral: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Church</div><div class="offsets">B: (25, 4) · R: (58, −4)</div></div>
+          <div class="pair" role="group" aria-label="Church before and after">
+            <figure><img class="media" src="./part1_images/church.jpg" alt="Church: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/church.jpg" alt="Church: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Emir</div><div class="offsets">B: (49, 24) · R: (107, 40)</div></div>
+          <div class="pair" role="group" aria-label="Emir before and after">
+            <figure><img class="media" src="./part1_images/emir.jpg" alt="Emir: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/emir.jpg" alt="Emir: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Harvesters</div><div class="offsets">B: (60, 18) · R: (123, 14)</div></div>
+          <div class="pair" role="group" aria-label="Harvesters before and after">
+            <figure><img class="media" src="./part1_images/harvesters.jpg" alt="Harvesters: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/harvesters.jpg" alt="Harvesters: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Icon</div><div class="offsets">B: (41, 17) · R: (90, 23)</div></div>
+          <div class="pair" role="group" aria-label="Icon before and after">
+            <figure><img class="media" src="./part1_images/icon.jpg" alt="Icon: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/icon.jpg" alt="Icon: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Italil</div><div class="offsets">B: (38, 22) · R: (77, 36)</div></div>
+          <div class="pair" role="group" aria-label="Italil before and after">
+            <figure><img class="media" src="./part1_images/italil.jpg" alt="Italil: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/italil.jpg" alt="Italil: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Lastochikino</div><div class="offsets">B: (−3, −2) · R: (76, −8)</div></div>
+          <div class="pair" role="group" aria-label="Lastochikino before and after">
+            <figure><img class="media" src="./part1_images/lastochikino.jpg" alt="Lastochikino: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/lastochikino.jpg" alt="Lastochikino: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Lugano</div><div class="offsets">B: (41, −17) · R: (92, −29)</div></div>
+          <div class="pair" role="group" aria-label="Lugano before and after">
+            <figure><img class="media" src="./part1_images/lugano.jpg" alt="Lugano: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/lugano.jpg" alt="Lugano: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Melons</div><div class="offsets">B: (80, 10) · R: (177, 14)</div></div>
+          <div class="pair" role="group" aria-label="Melons before and after">
+            <figure><img class="media" src="./part1_images/melons.jpg" alt="Melons: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/melons.jpg" alt="Melons: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Monastery</div><div class="offsets">B: (−3, 2) · R: (3, 2)</div></div>
+          <div class="pair" role="group" aria-label="Monastery before and after">
+            <figure><img class="media" src="./part1_images/monastery.jpg" alt="Monastery: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/monastery.jpg" alt="Monastery: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Self Portrait</div><div class="offsets">B: (78, 29) · R: (176, 37)</div></div>
+          <div class="pair" role="group" aria-label="Self Portrait before and after">
+            <figure><img class="media" src="./part1_images/self_portrait.jpg" alt="Self portrait: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/self_portrait.jpg" alt="Self portrait: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Siren</div><div class="offsets">B: (49, −6) · R: (96, −24)</div></div>
+          <div class="pair" role="group" aria-label="Siren before and after">
+            <figure><img class="media" src="./part1_images/siren.jpg" alt="Siren: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/siren.jpg" alt="Siren: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Three Generations</div><div class="offsets">B: (53, 13) · R: (111, 9)</div></div>
+          <div class="pair" role="group" aria-label="Three Generations before and after">
+            <figure><img class="media" src="./part1_images/three_generations.jpg" alt="Three Generations: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/three_generations.jpg" alt="Three Generations: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card result-card">
+          <div class="title-row"><div class="name">Tobolsk</div><div class="offsets">B: (3, 3) · R: (7, 3)</div></div>
+          <div class="pair" role="group" aria-label="Tobolsk before and after">
+            <figure><img class="media" src="./part1_images/tobolsk.jpg" alt="Tobolsk: original composite." /><div class="badge">Input</div><figcaption>Part 1 composite</figcaption></figure>
+            <figure><img class="media" src="./enhanced_bw/tobolsk.jpg" alt="Tobolsk: enhanced color reconstruction." /><div class="badge">Enhanced</div><figcaption>Aligned + cropped + balanced</figcaption></figure>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      <p>CS180 · Computer Vision &amp; Computational Photography</p>
+      <p><a class="inline" href="#overview">Back to top ↑</a></p>
+    </footer>
+  </main>
+</body>
+</html>
