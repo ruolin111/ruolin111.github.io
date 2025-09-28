@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project 2 — Fun with Filters & Frequencies</title>
+  <meta name="description" content="CS180 Project 2: finite differences, DoG, unsharp masking, hybrid images, Gaussian/Laplacian stacks, and multiresolution blending." />
+  <style>
+    :root{
+      --bg:#0b0c0f; --panel:#12141a; --text:#e6e8ef; --muted:#a9afbf;
+      --accent:#6d8dff; --accent-2:#7ee787; --ring:#2b3a87;
+      --shadow:0 10px 28px rgba(0,0,0,.35);
+      --radius:18px; --max:1100px;
+    }
+    @media (prefers-color-scheme: light){
+      :root{
+        --bg:#f7f8fb; --panel:#ffffff; --text:#171923; --muted:#5f6b85; --ring:#dfe6ff;
+        --shadow:0 10px 24px rgba(0,20,80,.08);
+      }
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Inter,"Helvetica Neue",Arial;
+      color:var(--text);
+      background: radial-gradient(1100px 700px at 90% -10%, rgba(109,141,255,.15), transparent 60%), var(--bg);
+    }
+    header{
+      position:sticky; top:0; z-index:5; backdrop-filter:saturate(1.3) blur(8px);
+      background: color-mix(in oklab, var(--bg), transparent 30%);
+      border-bottom:1px solid color-mix(in oklab, var(--ring), transparent 70%);
+    }
+    .nav{max-width:var(--max); margin:0 auto; padding:12px 20px; display:flex; gap:16px; align-items:center; justify-content:space-between}
+    .brand{font-weight:750; letter-spacing:.2px; text-decoration:none; color:var(--text)}
+    .brand:hover{color:var(--accent)}
+    .tabs{display:flex; gap:8px; flex-wrap:wrap}
+    .tabs a{ text-decoration:none; color:var(--text); font-weight:600; font-size:.95rem; padding:8px 12px; border-radius:999px;
+      border:1px solid color-mix(in oklab, var(--ring), transparent 60%); }
+    .tabs a:hover{background: color-mix(in oklab, var(--panel), transparent 10%);}
+    .wrap{max-width:var(--max); margin-inline:auto; padding:28px 20px 72px}
+    .hero, .card{
+      background:linear-gradient(180deg, color-mix(in oklab, var(--panel), transparent 0%) 0%, color-mix(in oklab, var(--panel), transparent 8%) 100%);
+      border:1px solid color-mix(in oklab, var(--ring), transparent 55%); box-shadow:var(--shadow);
+      border-radius:var(--radius); padding:22px;
+    }
+    h1{font-size:clamp(1.8rem, 3vw + .8rem, 3rem); line-height:1.15; margin:.3em 0 .2em}
+    h2{margin:.2em 0 .4em; font-size:clamp(1.2rem, 1.2rem + 1vw, 1.8rem)}
+    h3{margin:.2em 0 .4em; font-size:1.05rem; color:var(--muted)}
+    .kicker{display:inline-block; font-size:.78rem; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-2); font-weight:700}
+    .section{margin-top:42px}
+    .note{margin-top:10px; color:var(--muted); border-left:3px solid var(--accent); padding-left:12px; font-size:.95rem}
+    .small{font-size:.95rem; color:var(--muted)}
+    .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:color-mix(in oklab, var(--panel), white 6%); padding:.1rem .4rem; border:1px solid color-mix(in oklab, var(--ring), transparent 55%); border-radius:6px}
+
+    /* media blocks */
+    .grid{display:grid; gap:12px}
+    .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    @media (max-width:760px){ .g2,.g3{grid-template-columns:1fr} }
+    figure{margin:0; border-radius:16px; overflow:hidden; position:relative; border:1px solid color-mix(in oklab, var(--ring), transparent 60%);
+      background:#0e1016;}
+    img.media{display:block; width:100%; height:auto; filter:saturate(1.03) contrast(1.02);}
+    figcaption{padding:10px 12px; font-size:.95rem; color:var(--muted); background:linear-gradient(180deg, transparent, rgba(0,0,0,.12));}
+    .badge{
+      position:absolute; top:10px; left:10px; padding:6px 10px; border-radius:999px; font-size:.8rem; font-weight:800;
+      background:color-mix(in oklab, var(--bg), transparent 10%); color:var(--text);
+      border:1px solid color-mix(in oklab, var(--ring), transparent 40%); box-shadow:0 8px 18px rgba(0,0,0,.18);
+    }
+
+    footer{margin-top:56px; padding-top:18px; border-top:1px dashed color-mix(in oklab, var(--ring), transparent 60%); color:var(--muted)}
+    a.inline{color:var(--accent); text-decoration:none; border-bottom:1px dotted color-mix(in oklab, var(--accent), white 40%);}
+    a.inline:hover{opacity:.9}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="nav">
+      <a class="brand" href="../index.html">CS180 · Project 2</a>
+      <div class="tabs" role="navigation" aria-label="Section links">
+        <a href="#overview">Overview</a>
+        <a href="#p11">1.1</a>
+        <a href="#p12">1.2</a>
+        <a href="#p13">1.3</a>
+        <a href="#p21">2.1</a>
+        <a href="#p22">2.2</a>
+        <a href="#p23">2.3</a>
+        <a href="#p24">2.4</a>
+        <a href="#learned">Reflection</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <!-- Overview -->
+    <section id="overview" class="hero">
+      <span class="kicker">Overview</span>
+      <h1>Fun with Filters &amp; Frequencies</h1>
+      <p class="lead">
+        In this project I implemented core spatial filtering operations (finite differences, DoG, unsharp masking),
+        created <em>hybrid images</em> that change with viewing distance, and built <em>Gaussian/Laplacian stacks</em> for multiresolution blending.
+      </p>
+      <p class="small">Original inputs are shown from <span class="kbd">./data/</span> when helpful; results live under <span class="kbd">./out*/</span>.</p>
+    </section>
+
+    <!-- 1.1 -->
+    <section id="p11" class="section card">
+      <span class="kicker">Part 1.1</span>
+      <h2>Finite Differences on Selfie &amp; Convolution Variants</h2>
+      <p>
+  I implemented 2D convolution in two ways and compared them against
+  <code>scipy.signal.convolve2d</code>:
+</p>
+<ul>
+  <li><strong>Four-loop</strong> (<code>convolution_four_loops</code>): nested loops over <em>i, j, m, n</em>. For each output pixel, I multiply the padded image patch by the kernel and sum.</li>
+  <li><strong>Two-loop</strong> (<code>convolution_two_loops</code>): loops over <em>i, j</em> only; the inner multiply–accumulate uses NumPy slicing (<code>region * kernel</code>) followed by <code>np.sum</code>, which is vectorized in C and much faster.</li>
+</ul>
+<p>
+  I use <strong>zero padding</strong> (mode <code>"constant"</code>) so the output has the same size as the input. For the smoothing demo I convolve a grayscale selfie with a <code>9×9</code> box kernel from <code>box_kernel(9)</code>. I also show horizontal/vertical derivatives on the selfie using the centered finite-difference filters
+  <code>Dx = [[1, 0, -1]] · 0.5</code> and <code>Dy = [[1],[0],[-1]] · 0.5</code>.
+</p>
+<p class="small">
+  Note: my custom routines apply the kernel as written (i.e., no explicit flip), which is correlation; for symmetric kernels like the box filter, this matches SciPy’s convolution. For derivatives I use SciPy directly in later parts to avoid sign ambiguities and for speed.
+</p>
+    <div class="grid g3">
+        <figure><img class="media" src="./out1/selfie_4loop.jpg" alt="Selfie 4-loop, slowest" /><figcaption>Selfie 4-loop, very slow</figcaption></figure>
+        <figure><img class="media" src="./out1/selfie_2loop.jpg" alt="Selfie 2-loop, faster" /><figcaption>Selfie 2-loop, faster</figcaption></figure>
+        <figure><img class="media" src="./out1/selfie_scipy.jpg" alt="Selfie Scipy, fastest" /><figcaption>Selfie Scipy, fastest</figcaption></figure>
+      </div>
+      <div class="grid g2" style="margin-top:12px">
+        <figure><img class="media" src="./out1/convolution_4loops.png" alt="Convolution 4-loops" /><figcaption>4-loop convolution code</figcaption></figure>
+        <figure><img class="media" src="./out1/convolution_2loops.png" alt="Convolution 2-loops" /><figcaption>2-loop convolution code</figcaption></figure>
+      </div>
+      <div class="grid g3">
+        <figure><img class="media" src="./out1/selfie_Ix.jpg" alt="Selfie derivative in x" /><figcaption>∂I/∂x (selfie)</figcaption></figure>
+        <figure><img class="media" src="./out1/selfie_Iy.jpg" alt="Selfie derivative in y" /><figcaption>∂I/∂y (selfie)</figcaption></figure>
+        <figure><img class="media" src="./out1/selfie_gradient_magnitude.jpg" alt="Selfie gradient magnitude" /><figcaption>|∇I| (selfie)</figcaption></figure>
+      </div>
+      <p class="note">Zero-padding for borders; custom conv matches SciPy within float tolerance, but SciPy is fastest (C-optimized).</p>
+    </section>
+
+    <!-- 1.2 -->
+    <section id="p12" class="section card">
+      <span class="kicker">Part 1.2</span>
+      <h2>Edges on Cameraman — Threshold Sweep</h2>
+      <p>
+  For <em>Cameraman</em> (<code>./data/cameraman.jpg</code>) I compute partials with
+  <code>Dx</code> and <code>Dy</code> via <code>scipy.signal.convolve2d(..., mode="same", boundary="fill")</code>.
+  The gradient magnitude is <code>G = sqrt(Ix^2 + Iy^2)</code>. To produce a binary edge map I threshold <code>G</code> and sweep
+  <code>τ ∈ {0.1, 0.2, 0.3, 0.4, 0.5}</code>:
+</p>
+<ul>
+  <li>Low <code>τ</code> keeps weak edges but introduces noise in flat regions.</li>
+  <li>Higher <code>τ</code> suppresses noise but removes faint edges.</li>
+</ul>
+<p>
+  The figure set includes <code>Ix</code>, <code>Iy</code>, <code>|∇I|</code>, and thresholded results for multiple <code>τ</code> so you can see the trade-off between recall and precision.
+</p>
+
+      <div class="grid g3">
+        <figure><img class="media" src="./out1/cameraman_edges_thresh_0.1.jpg" alt="Edges t=0.1" /><figcaption>τ = 0.1</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_edges_thresh_0.2.jpg" alt="Edges t=0.2" /><figcaption>τ = 0.2</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_edges_thresh_0.3.jpg" alt="Edges t=0.3" /><figcaption>τ = 0.3</figcaption></figure>
+      </div>
+      <div class="grid g3" style="margin-top:12px">
+        <figure><img class="media" src="./out1/cameraman_Ix.jpg" alt="Cameraman dx" /><figcaption>∂I/∂x</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_Iy.jpg" alt="Cameraman dy" /><figcaption>∂I/∂y</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_gradient_magnitude.jpg" alt="Cameraman grad mag" /><figcaption>|∇I|</figcaption></figure>
+      </div>
+      <div class="grid g3" style="margin-top:12px">
+        <figure><img class="media" src="./out1/cameraman_orientation_only_dog.jpg" alt="Cameraman" /><figcaption>Cameraman orientation only, DoG</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_orientation_only_raw.jpg" alt="Cameraman" /><figcaption>Cameraman orientation only, raw</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_orientation_only_smooth.jpg" alt="Cameraman" /><figcaption>Cameraman orientation only, smoothed</figcaption></figure>
+      </div>
+    </section>
+
+    <!-- 1.3 -->
+    <section id="p13" class="section card">
+      <span class="kicker">Part 1.3</span>
+      <h2>Derivative of Gaussian (DoG)</h2>
+      <p>
+  Raw finite differences amplify noise. I therefore smooth with a Gaussian and then differentiate:
+  I build a <code>7×7</code> separable Gaussian with <code>cv2.getGaussianKernel(ksize=7, sigma=1.0)</code>, blur the image, and compute
+  <code>Ix_smooth, Iy_smooth</code> and <code>|∇I|</code>.
+</p>
+<p>
+  I also implement the <em>one-step</em> approach: pre-convolve the Gaussian kernel with <code>Dx</code> and <code>Dy</code> to form DoG filters
+  (<code>DoG_x</code>, <code>DoG_y</code>), then convolve the image once to get <code>Ix_dog, Iy_dog</code>. I measure mean absolute differences between the two pipelines (smooth→diff vs. DoG) and they are small, confirming equivalence up to numerical details.
+</p>
+<p>
+  Finally, I threshold both <code>|∇I|</code> maps using the same <code>τ</code> sweep as Part 1.2 to show that smoothing produces thinner, cleaner edges with fewer speckles.
+</p>
+<p>
+  Beyond edge strength, I visualize <strong>orientation</strong>. Using <code>θ = atan2(Iy, Ix)</code>, I map
+  <code>θ ∈ [−π, π]</code> to <code>hue ∈ [0, 1]</code>. I encode <em>magnitude</em> as the value channel and fix saturation at 1, then convert HSV→RGB (<code>matplotlib.colors.hsv_to_rgb</code>).
+  This yields color wheels where directions wrap cyclically (e.g., ±π share the same hue). I also provide an “orientation-only” version with value=1 to isolate direction from strength, and render a legend bar (0–360°) for reference.
+</p>
+
+
+      <div class="grid g3">
+        <figure><img class="media" src="./out1/cameraman_smoothed.jpg" alt="Gaussian smoothed" /><figcaption>Gaussian smoothed</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_edges_smooth_thresh_0.1.jpg" alt="Edges after smoothing" /><figcaption>Edges after smoothing (τ≈0.1)</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_edges_dog_thresh_0.1.jpg" alt="DoG edges" /><figcaption>One-step DoG edges (τ≈0.1)</figcaption></figure>
+      </div>
+      <div class="grid g2" style="margin-top:12px">
+        <figure><img class="media" src="./out1/dog_x.jpg" alt="DoG X" /><figcaption>DoG (X)</figcaption></figure>
+        <figure><img class="media" src="./out1/dog_y.jpg" alt="DoG Y" /><figcaption>DoG (Y)</figcaption></figure>
+      </div>
+      
+      <div class="grid g2" style="margin-top:12px">
+        <figure><img class="media" src="./out1/cameraman_gradient_orientation_raw.jpg" alt="Orientation raw" /><figcaption>Gradient orientation (raw HSV map)</figcaption></figure>
+        <figure><img class="media" src="./out1/cameraman_gradient_orientation_smooth.jpg" alt="Orientation smoothed" /><figcaption>Orientation (smoothed)</figcaption></figure>
+      </div>
+    </section>
+
+    <!-- 2.1 -->
+    <section id="p21" class="section card">
+      <span class="kicker">Part 2.1</span>
+      <h2>Unsharp Masking — “Sharpening”</h2>
+      <p>
+  I implement unsharp masking with:
+  <code>low = Gσ * I</code>, <code>high = I − low</code>, <code>I<sub>sharp</sub> = clip(I + amount · high)</code>.
+  The code uses <code>cv2.GaussianBlur</code> (default <code>ksize=9</code>, <code>σ=2.0</code>) and saves all three images.
+  On <em>taj.jpg</em> I show the blurred base, the high-frequency layer (normalized for visibility), and the sharpened output.
+</p>
+<p>
+  To test “recoverability,” I blur <em>dog.jpg</em> and then sharpen it. I report MSE vs. the original before/after sharpening.
+  MSE drops after sharpening—contrast edges are restored—but never returns to the original, illustrating that sharpening boosts existing high frequencies but cannot reconstruct detail lost to blur.
+</p>
+
+      <h3>Taj Mahal</h3>
+      <div class="grid g3">
+        <figure><img class="media" src="./out2_1/p2_1_taj_low.jpg" alt="Taj low-pass" /><figcaption>Low-pass (blurred)</figcaption></figure>
+        <figure><img class="media" src="./out2_1/p2_1_taj_high.jpg" alt="Taj high mask" /><figcaption>High-frequency mask</figcaption></figure>
+        <figure><img class="media" src="./out2_1/p2_1_taj_sharp.jpg" alt="Taj sharpened" /><figcaption>Sharpened</figcaption></figure>
+      </div>
+      <div class="grid g2" style="margin-top:12px">
+        <figure><img class="media" src="./data/taj.jpg" alt="Taj original" /><figcaption>Taj Original</figcaption></figure>
+        <figure><img class="media" src="./out2_1/p2_1_taj_recovered.jpg" alt="Taj recovered extra" /><figcaption>Extra: Taj recovered</figcaption></figure>
+      </div>
+      <h3>Dog (blur → recover)</h3>
+      <div class="grid g3">
+        <figure><img class="media" src="./data/dog.jpg" alt="Dog original" /><figcaption>Dog Original</figcaption></figure>
+        <figure><img class="media" src="./out2_1/p2_1_dog_blurred.jpg" alt="Dog blurred" /><figcaption>Blurred</figcaption></figure>
+        <figure><img class="media" src="./out2_1/p2_1_dog_recovered.jpg" alt="Dog recovered" /><figcaption>Recovered (sharpened)</figcaption></figure>
+      </div>
+    </section>
+
+    <!-- 2.2 -->
+    <section id="p22" class="section card">
+      <span class="kicker">Part 2.2</span>
+      <h2>Hybrid Images</h2>
+     <p>
+  A hybrid image is the sum of a low-pass of one image and a high-pass of another:
+  <code>Hybrid = LP(im₂) + (im₁ − LP(im₁))</code>. I align the inputs, choose Gaussian cutoffs empirically, and verify the filtering by visualizing log-magnitude FFTs of inputs/filters/results. Up close, the high-pass dominates; from a distance, the low-pass takes over.
+</p>
+<p class="small">
+  Bells &amp; Whistles (color variants): my pipeline supports <em>modeA/modeB</em> ∈ {<code>gray</code>, <code>color</code>} so I can keep color in the low-pass, the high-pass, or both. Consistent with perception, coloring the high-pass often looks best up close without overwhelming the far-view low-pass structure.
+</p>
+
+
+      <h3>Derek + Nutmeg (with Fourier spectra)</h3>
+      <div class="grid g2" style="margin-top:12px">
+        <figure><img class="media" src="./data/DerekPicture.jpg" alt="DerekPicture" /><figcaption>Derek Original</figcaption></figure>
+        <figure><img class="media" src="./data/nutmeg.jpg" alt="Nutmeg" /><figcaption>Nutmeg Original</figcaption></figure>
+      </div>
+      <div class="grid g3" style="margin-top:12px">
+        <figure><img class="media" src="./out2_2_derek/lowpass.jpg" alt="Low-pass spatial" /><figcaption>Low-pass (spatial)</figcaption></figure>
+        <figure><img class="media" src="./out2_2_derek/highpass.jpg" alt="High-pass spatial" /><figcaption>High-pass (spatial)</figcaption></figure>
+        <figure><img class="media" src="./out2_2_derek/hybrid.jpg" alt="Hybrid result" /><figcaption>Final hybrid</figcaption></figure>
+      </div>
+      <div class="grid g3">
+        <figure><img class="media" src="./out2_2_derek/fft_im_low.png" alt="FT low-pass image" /><figcaption>FT: low-pass image</figcaption></figure>
+        <figure><img class="media" src="./out2_2_derek/fft_im_high.png" alt="FT high-pass image" /><figcaption>FT: high-pass image</figcaption></figure>
+        <figure><img class="media" src="./out2_2_derek/fft_hybrid.png" alt="FT hybrid" /><figcaption>FT: hybrid</figcaption></figure>
+      </div>
+      <div class="grid g2" style="margin-top:12px">
+        <figure><img class="media" src="./out2_2_derek/fft_lowpass.png" alt="FT low-pass image" /><figcaption>FT: low-pass image</figcaption></figure>
+        <figure><img class="media" src="./out2_2_derek/fft_highpass.png" alt="FT high-pass image" /><figcaption>FT: high-pass image</figcaption></figure>
+      </div>
+
+      <h3>More Hybrids</h3>
+      <div class="grid g3">
+        <figure><img class="media" src="./data/dog2.jpg" alt="Dog Original" /><figcaption>Dog original</figcaption></figure>
+        <figure><img class="media" src="./data/cat.jpg" alt="Cat Original" /><figcaption>Cat Original</figcaption></figure>
+        <figure><img class="media" src="./out2_2_dog/hybrid.jpg" alt="Hybrid result" /><figcaption>Hybrid Result</figcaption></figure>
+      </div>
+      <div class="grid g3">
+        <figure><img class="media" src="./data/happy.jpg" alt="Happy Original" /><figcaption>Happy original</figcaption></figure>
+        <figure><img class="media" src="./data/sad.jpg" alt="Sad Original" /><figcaption>Sat Original</figcaption></figure>
+        <figure><img class="media" src="./out2_2_face/hybrid.jpg" alt="Hybrid result" /><figcaption>Hybrid Result</figcaption></figure>
+      </div>
+      <h3>Bells and Whistles</h3>
+      <div class="grid g3">
+        <figure><img class="media" src="./out2_2_dog/hybrid_color_high.jpg" alt="Color in high pass" /><figcaption>Color in high pass</figcaption></figure>
+        <figure><img class="media" src="./out2_2_dog/hybrid_color_low.jpg" alt="Color in low pass" /><figcaption>Color in low pass</figcaption></figure>
+        <figure><img class="media" src="./out2_2_dog/hybrid.jpg" alt="Color in both" /><figcaption>Color in both</figcaption></figure>
+      </div>
+      <div class="grid g3">
+        <figure><img class="media" src="./out2_2_derek/hybrid_color_high.jpg" alt="Color in high pass" /><figcaption>Color in high pass</figcaption></figure>
+        <figure><img class="media" src="./out2_2_derek/hybrid_color_low.jpg" alt="Color in low pass" /><figcaption>Color in low pass</figcaption></figure>
+        <figure><img class="media" src="./out2_2_derek/hybrid.jpg" alt="Color in both" /><figcaption>Color in both</figcaption></figure>
+      </div>
+      <p class="note">Color in the low-pass tends to keep the overall color while color in high-pass barely shows any color.</p>
+    </section>
+
+    <!-- 2.3 and 2.4 -->
+    <section id="p23" class="section card">
+      <span class="kicker">Part 2.3</span>
+      <h2>Gaussian &amp; Laplacian Stacks (Same-size)</h2>
+      <p>
+  I build <strong>Gaussian stacks</strong> by repeatedly blurring the same resolution (no downsampling), and <strong>Laplacian stacks</strong> as band-pass layers:
+  <code>L<sub>i</sub> = G<sub>i</sub> − G<sub>i+1</sub></code> with the coarsest <code>G</code> kept as the residual. Helper routines:
+  <code>gaussian_stack(img, LEVELS)</code> and <code>laplacian_stack(img, LEVELS)</code> use <code>BLUR_KSIZE</code> and <code>BLUR_SIGMA</code> constants to control smoothing.
+  I include grid visualizations for both stacks.
+</p>
+<p class="note">All resulting images are displayed in the next section.</p>
+      
+    </section>
+
+    <!-- 2.4 -->
+    <section id="p24" class="section card">
+      <span class="kicker">Part 2.4</span>
+      <h2>Multiresolution Blending (a.k.a. Oraple)</h2>
+      <p>
+  For classic two-image blending I:
+</p>
+<ol>
+  <li>Build Laplacian stacks for <em>car1</em> and <em>car2</em> (standing in for the “apple” and “orange”).</li>
+  <li>Create a <strong>center feather mask</strong> (<code>build_center_feather_mask</code>) with a transition band of width <code>MASK_FEATHER_W</code>; then build its Gaussian stack (<code>gaussian_stack_mask</code>).</li>
+  <li>Blend per level: <code>L<sub>blend,i</sub> = L<sub>A,i</sub> · M<sub>i</sub> + L<sub>B,i</sub> · (1 − M<sub>i</sub>)</code>.</li>
+  <li>Reconstruct by summing all blended bands (<code>reconstruct_from_bands</code>).</li>
+</ol>
+<p>
+  My <code>blend_variant</code> function also supports <strong>gray vs. color</strong> on each side (via <code>modeA/modeB</code>) to test perceptual effects of color in different bands (I report <em>gray+gray</em>, <em>gray+color</em>, <em>color+gray</em>, <em>color+color</em>).
+</p>
+<p>
+  To go beyond vertical seams, I design <strong>irregular masks</strong> that target specific regions:
+  <code>create_elliptical_mask(shape, r_inner, r_outer, a, b, mode)</code> builds a soft elliptical pass region centered in the image. Pixels inside <code>r_inner</code> pass fully; pixels outside <code>r_outer</code> are rejected; the band in between transitions linearly (or with a Gaussian). I then create a Gaussian <em>mask stack</em> and reuse the same Laplacian blending as above.
+</p>
+<p>
+  With <em>face.jpeg</em> and <em>hand.jpg</em>, the smoothed mask makes the pasted region blend seamlessly into surrounding texture (no hard cut). I also show per-level visualizations (<code>show_per_level=True</code>) to make the frequency-space fusion explicit.
+</p>
+
+
+
+      <h3>Apple + Orange (“Oraple”)</h3>
+      <div>
+        <figure><img class="media" src="./out2_4/apple_stack.png" alt="Apple Gaussian stack" /><figcaption>Apple — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/orange_stack.png" alt="Orange Gaussian stack" /><figcaption>Orange — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/apple_laplacian.png" alt="Apple Laplacian stack" /><figcaption>Apple — Laplacian stack</figcaption></figure>
+      </div>
+      <div>
+        <figure><img class="media" src="./out2_4/orange_laplacian.png" alt="Orange Laplacian stack" /><figcaption>Orange — Laplacian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/oraple_mask_stack.png" alt="Mask Gaussian stack" /><figcaption>Mask — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/oraple_colors.png" alt="Oraple colors viz" /><figcaption>Oraple colors (viz)</figcaption></figure>
+      </div>
+
+      <h3>Custom Blends</h3>
+      <div>
+        <figure><img class="media" src="./out2_4/car1_stack.png" alt="Apple Gaussian stack" /><figcaption>Car1 — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/car2_stack.png" alt="Orange Gaussian stack" /><figcaption>Car2 — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/car1_laplacian_stack.png" alt="Apple Laplacian stack" /><figcaption>Car1 — Laplacian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/car2_laplacian_stack.png" alt="Apple Gaussian stack" /><figcaption>Car2 — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/cars_blended.png" alt="Cars blended" /><figcaption>Cars blended</figcaption></figure>
+      </div>
+      <div>
+        <figure><img class="media" src="./out2_4/hand_stack2.png" alt="Apple Gaussian stack" /><figcaption>Hand — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/face_stack1.png" alt="Orange Gaussian stack" /><figcaption>Face — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/hand_laplacian_stack.png" alt="Apple Laplacian stack" /><figcaption>Hand — Laplacian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/face_laplacian_stack.png" alt="Apple Gaussian stack" /><figcaption>Face — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/gaussian_mask_stack.png" alt="Mask Gaussian stack" /><figcaption>Mask — Gaussian stack</figcaption></figure>
+        <figure><img class="media" src="./out2_4/face_hand_final_blended.png" alt="Cars blended" /><figcaption>Face/hand blended</figcaption></figure>
+      </div>
+    </section>
+
+    <!-- Reflection -->
+    <section id="learned" class="section card">
+  <span class="kicker">Reflection</span>
+  <h2>What I Learned</h2>
+
+  <h3>1) Convolution mechanics & performance really matter</h3>
+  <ul>
+    <li><strong>Correlation vs. convolution:</strong> Implementing both a 4-loop and 2-loop version forced me to notice that “multiply & sum without flipping the kernel” is correlation. For symmetric kernels (box/Gaussian) it matches convolution, but for derivative filters the distinction (and sign) matters.</li>
+    <li><strong>Padding changes results at borders:</strong> Using zero padding (<code>boundary="fill"</code>) produces dark halos for large kernels; mirror/reflect would preserve energy better. Picking padding is part of the algorithm, not an afterthought.</li>
+    <li><strong>Vectorization wins:</strong> The 2-loop version (slice → <code>region * kernel</code> → <code>sum</code>) is dramatically faster than the 4-loop baseline. It’s a tangible example of why we lean on NumPy/SciPy or OpenCV for inner loops.</li>
+  </ul>
+
+  <h3>2) Edge detection is about signal-to-noise, not just formulas</h3>
+  <ul>
+    <li><strong>Finite differences are noisy:</strong> On Cameraman, raw Dx/Dy light up sensor noise and textures. A threshold that looks good in one area erases faint structure in another.</li>
+    <li><strong>DoG equivalence in practice:</strong> Blurring then differentiating ≈ differentiating a Gaussian (DoG) then convolving once. Computing mean absolute differences between the two pipelines gave tiny values, which is a nice empirical check of the theory.</li>
+    <li><strong>Orientation ≠ magnitude:</strong> Mapping <code>atan2(Iy, Ix)</code> to hue and using |∇I| for value was eye-opening: direction flows smoothly across edges even when magnitude spikes. The legend bar made “angle → color” intuitive.</li>
+  </ul>
+
+  <h3>3) Sharpening restores contrast, not lost detail</h3>
+  <ul>
+    <li><strong>Unsharp masking intuition:</strong> <code>I + α(I − Gσ*I)</code> boosts mid/high frequencies. It makes edges crisper, but can’t reconstruct information removed by blur.</li>
+    <li><strong>Measuring helps:</strong> MSE(original, blurred) &gt; MSE(original, recovered) — sharpening reduced the error but didn’t reach the original. Quantifying this keeps “looks sharper” honest.</li>
+    <li><strong>Display scaling is treacherous:</strong> I had to normalize the high-pass for visualization; otherwise it looks black. Never trust a band-pass image until you verify its scale.</li>
+  </ul>
+
+  <h3>4) Frequency stacks make blending predictable</h3>
+  <ul>
+    <li><strong>Same-size stacks simplify reconstruction:</strong> Building Gaussian/Laplacian stacks without downsampling let me reconstruct by simple summation of bands. It’s easier to reason about than multi-resolution with resizes.</li>
+    <li><strong>Masks must have pyramids too:</strong> A crisp mask + Laplacian bands = ringing/seams. A Gaussian mask stack softens transitions at coarse scales and gives a seamless composite.</li>
+    <li><strong>Irregular masks are powerful:</strong> The elliptical/center masks showed that “where” and “how fast” the mask transitions control whether a blend reads as natural or pasted.</li>
+  </ul>
+
+  <h3>5) Hybrids teach alignment and color choices</h3>
+  <ul>
+    <li><strong>Alignment first:</strong> Even a 2–3 px misalignment ruins a hybrid. Getting the images to match geometry matters more than exact cutoff frequencies.</li>
+    <li><strong>Where to put color:</strong> Keeping color in the low-pass reads better from afar; coloring the high-pass can look crunchy up close. My <code>modeA/modeB</code> variants made this trade-off obvious.</li>
+    <li><strong>Fourier sanity checks:</strong> Looking at log-magnitude FFTs is an instant “unit test” that your band limits are doing what you think.</li>
+  </ul>
+
+  <h3>6) Practical engineering takeaways</h3>
+  <ul>
+    <li><strong>Parameter coupling:</strong> Kernel size, σ, and thresholds interact. I learned to change one knob at a time and keep notes/screenshots of the effect.</li>
+    <li><strong>Color pipelines bite:</strong> OpenCV loads BGR; Matplotlib expects RGB. Converting consistently avoided “why is everything blue?” moments.</li>
+    <li><strong>Numerical hygiene:</strong> Clipping, small epsilons, and dtype control (<code>float32</code> vs <code>uint8</code>) prevent silent artifacts when summing bands or normalizing filters.</li>
+  </ul>
+
+  <p class="note">
+    Big picture: the same frequency thinking unified three seemingly different tasks—edge detection (DoG), detail enhancement (unsharp mask),
+    and seamless compositing (Laplacian blending). Once I saw everything as “what band am I keeping and how am I mixing it?”, the results became easier to predict and debug.
+  </p>
+</section>
+
+
+    <footer>
+      <p>CS180 · Project 2 · Fun with Filters &amp; Frequencies</p>
+      <p><a class="inline" href="#overview">Back to top ↑</a></p>
+    </footer>
+  </main>
+</body>
+</html>
