@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CS180/280A · Project 3 — Warping & Mosaicing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+  :root { --bg:#f8fafc; --ink:#0f172a; --muted:#475569; --card:#ffffff; --border:#e2e8f0; --pill:#eef2ff; --accent:#4338ca; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:32px 24px; border-bottom:1px solid var(--border); background:linear-gradient(180deg,#ffffff,#f6f8ff); position:sticky; top:0; z-index:1; }
+  header h1 { margin:0; font-size:32px; font-weight:800; letter-spacing:-0.02em; }
+  header nav a { margin-right:16px; color:var(--accent); text-decoration:none; font-weight:600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  section { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin:16px 0 24px; }
+  h2 { margin:0 0 8px; font-size:22px; }
+  h3 { margin:18px 0 8px; font-size:18px; }
+  .muted { color:var(--muted); }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .imgbox { background:#f8fafc; border:1px solid var(--border); border-radius:12px; padding:8px; text-align:center; }
+  .imgbox img { max-width:100%; border-radius:8px; }
+  code, pre { background:#0b1020; color:#e5e7eb; border-radius:10px; padding:12px; overflow:auto; }
+  table { width:100%; border-collapse: collapse; font-variant-numeric:tabular-nums; }
+  th, td { padding:8px 10px; border-bottom:1px solid var(--border); }
+  th { text-align:left; color:#334155; }
+  .pill { display:inline-block; background:var(--pill); border:1px solid #c7d2fe; color:#3730a3; border-radius:999px; padding:4px 10px; margin-right:8px; font-weight:600; }
+  details summary { cursor:pointer; }
+  .cmd { white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Project 3: Stitching Photo Mosaics</h1>
+  <nav>
+    <a href="#overview">Overview</a>
+    <a href="#a1">A.1</a>
+    <a href="#a2">A.2</a>
+    <a href="#a3">A.3</a>
+    <a href="#a4">A.4</a>
+  </nav>
+</header>
+<main>
+
+<section id="overview">
+  <h2>Overview</h2>
+  <p class="muted">This project implements point picking, normalized DLT homography recovery, inverse warping (nearest &amp; bilinear), planar rectification, and feather-blended mosaics. Below I show a full walk-through using the pair of images I took.</p>
+</section>
+
+<section id="a1">
+  <h2>TASK A.1 · Shoot the Pictures</h2>
+  <p>Two overlapping photos were captured by rotating the camera around a fixed center of projection so their relation is a projective transform.</p>
+  <div class="grid">
+    <div class="imgbox"><img src="data/IMG_2961.jpg" alt="data/IMG_2963"><div class="muted">IMG_2963.jpg</div></div>
+    <div class="imgbox"><img src="data/IMG_2962.jpg" alt="data/IMG_2964"><div class="muted">IMG_2964.jpg</div></div>
+  </div>
+  <p class="muted">Tip: aim for 30–50% overlap and avoid moving objects; parallax from large translations can cause ghosting.</p>
+</section>
+
+<section id="a2">
+  <h2>TASK A.2 · Recover Homographies</h2>
+  <h3>Correspondences</h3>
+  <p>I manually clicked 11 pairs of features (corners/edges). Here is a visualization of the correspondences I used.</p>
+  <div class="grid">
+    <div class="imgbox"><img src="data/IMG_2961_points.jpg" alt="data/IMG_2961_points"><div class="muted">IMG_2961_points.jpg</div></div>
+    <div class="imgbox"><img src="data/IMG_2962_points.jpg" alt="data/IMG_2962_points"><div class="muted">IMG_2962_points.jpg</div></div>
+  </div>
+
+  <h3>System of Equations (DLT)</h3>
+  <p>For a correspondence \((x,y)\mapsto(x',y')\), two rows are added to \(A\mathbf{h}=0\):</p>
+  <p>\[
+  \begin{bmatrix}
+  -x & -y & -1 & 0 & 0 & 0 & x x' & y x' & x' \\
+  0 & 0 & 0 & -x & -y & -1 & x y' & y y' & y'
+  \end{bmatrix}
+  \]</p>
+  <p>I use <strong>normalized DLT</strong> (Hartley): both point sets are translated to zero mean and scaled so mean distance is \(\sqrt 2\). Solve via SVD (last right singular vector), then de-normalize and scale to \(H_{33}=1\).</p>
+
+  <h3>A matrix (first 8 rows of 22)</h3>
+  <table><thead><tr><th>a1</th><th>a2</th><th>a3</th><th>a4</th><th>a5</th><th>a6</th><th>a7</th><th>a8</th><th>a9</th></tr></thead>
+  <tbody>
+  <tr><td>1.0673</td><td>1.8994</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>1.3861</td><td>2.4668</td><td>-1.2987</td></tr>
+  <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>1.0673</td><td>1.8994</td><td>-1.0000</td><td>2.1208</td><td>3.7743</td><td>-1.9871</td></tr>
+  <tr><td>0.8760</td><td>1.5845</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.9078</td><td>1.6421</td><td>-1.0363</td></tr>
+  <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.8760</td><td>1.5845</td><td>-1.0000</td><td>1.4222</td><td>2.5723</td><td>-1.6234</td></tr>
+  <tr><td>0.6707</td><td>-0.8298</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.3632</td><td>-0.4493</td><td>-0.5415</td></tr>
+  <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.6707</td><td>-0.8298</td><td>-1.0000</td><td>-0.6139</td><td>0.7594</td><td>0.9152</td></tr>
+  <tr><td>0.1412</td><td>1.3722</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.0310</td><td>0.3009</td><td>-0.2193</td></tr>
+  <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.1412</td><td>1.3722</td><td>-1.0000</td><td>0.1883</td><td>1.8298</td><td>-1.3334</td></tr>
+  </tbody></table>
+  <details><summary class="pill">Show full A (22×9)</summary><pre><code>[[ 1.06728967  1.89940663 -1.          0.          0.          0.
+   1.38610093  2.46678046 -1.29871109]
+ [ 0.          0.          0.          1.06728967  1.89940663 -1.
+   2.12079919  3.77428936 -1.98708865]
+ [ 0.87601304  1.58449999 -1.          0.          0.          0.
+   0.90784081  1.64206888 -1.03633253]
+ [ 0.          0.          0.          0.87601304  1.58449999 -1.
+   1.42215564  2.57234251 -1.62344117]
+ [ 0.67074056 -0.82978432 -1.          0.          0.          0.
+   0.36320318 -0.44932471 -0.54149578]
+ [ 0.          0.          0.          0.67074056 -0.82978432 -1.
+  -0.61385267  0.75940737  0.91518645]
+ [ 0.14123086  1.37222958 -1.          0.          0.          0.
+   0.03096861  0.3008977  -0.2192765 ]
+ [ 0.          0.          0.          0.14123086  1.37222958 -1.
+   0.18832342  1.82979105 -1.33344382]
+ [-0.43493167  0.13826204 -1.          0.          0.          0.
+   0.19692874 -0.06260241  0.45278086]
+ [ 0.          0.          0.         -0.43493167  0.13826204 -1.
+  -0.05041521  0.01602668 -0.11591525]
+ [ 0.78737265 -1.62288255 -1.          0.          0.          0.
+   0.46622716 -0.96095783 -0.59213024]
+ [ 0.          0.          0.          0.78737265 -1.62288255 -1.
+  -1.38385445  2.85231299  1.75755972]
+ [-0.37428299 -1.24732721 -1.          0.          0.          0.
+   0.19875703  0.6623733   0.53103411]
+ [ 0.          0.          0.         -0.37428299 -1.24732721 -1.
+   0.44677261  1.48890452  1.19367597]
+ [-0.60754717  1.36523165 -1.          0.          0.          0.
+   0.298857   -0.67156767  0.49190749]
+ [ 0.          0.          0.         -0.60754717  1.36523165 -1.
+  -0.76818072  1.72619457 -1.26439683]
+ [-1.85551056 -1.34529817 -1.          0.          0.          0.
+   3.17614723  2.30279749  1.71173762]
+ [ 0.          0.          0.         -1.85551056 -1.34529817 -1.
+   2.05259631  1.48819097  1.10621646]
+ [-0.52823735 -0.10899799 -1.          0.          0.          0.
+   0.29996442  0.06189551  0.56785918]
+ [ 0.          0.          0.         -0.52823735 -0.10899799 -1.
+   0.06034656  0.01245208  0.11424138]
+ [ 0.25786295 -1.20533966 -1.          0.          0.          0.
+   0.01737303 -0.0812075  -0.06737312]
+ [ 0.          0.          0.          0.25786295 -1.20533966 -1.
+  -0.3190811   1.4914942   1.23740573]]</code></pre></details>
+
+  <h3>Recovered Homography \(H\) (IMG_2963→IMG_2964)</h3>
+  <table><tbody>
+  <tr><td>3.40187491</td><td>0.30172659</td><td>-7971.77295389</td></tr>
+  <tr><td>0.63896041</td><td>2.83108044</td><td>-1924.95290764</td></tr>
+  <tr><td>0.00058304</td><td>0.00001624</td><td>1.00000000</td></tr>
+  </tbody></table>
+
+  <h3>Reprojection Error</h3>
+  <p><strong>RMSE:</strong> 2.10 px</p>
+  <details><summary class="pill">Per-point details</summary>
+  <table><thead><tr><th>#</th><th>(x,y) in IMG_2963</th><th>GT (x',y') in IMG_2964</th><th>pred (x',y')</th><th>error (px)</th></tr></thead>
+  <tbody>
+  <tr><td>1</td><td>2655.0,429.0</td><td>465.0,388.0</td><td>465.63,385.93</td><td>2.17</td></tr>
+  <tr><td>2</td><td>2737.0,564.0</td><td>579.0,546.0</td><td>579.41,545.35</td><td>0.77</td></tr>
+  <tr><td>3</td><td>2825.0,1599.0</td><td>794.0,1649.0</td><td>793.47,1648.67</td><td>0.63</td></tr>
+  <tr><td>4</td><td>3052.0,655.0</td><td>934.0,672.0</td><td>934.88,673.64</td><td>1.86</td></tr>
+  <tr><td>5</td><td>3299.0,1184.0</td><td>1226.0,1201.0</td><td>1226.18,1201.28</td><td>0.33</td></tr>
+  <tr><td>6</td><td>2775.0,1939.0</td><td>772.0,2015.0</td><td>775.06,2014.63</td><td>3.08</td></tr>
+  <tr><td>7</td><td>3273.0,1778.0</td><td>1260.0,1770.0</td><td>1259.39,1770.42</td><td>0.74</td></tr>
+  <tr><td>8</td><td>3373.0,658.0</td><td>1243.0,702.0</td><td>1243.18,703.03</td><td>1.04</td></tr>
+  <tr><td>9</td><td>3908.0,1820.0</td><td>1773.0,1732.0</td><td>1775.01,1730.51</td><td>2.51</td></tr>
+  <tr><td>10</td><td>3339.0,1290.0</td><td>1276.0,1301.0</td><td>1272.46,1300.87</td><td>3.54</td></tr>
+  <tr><td>11</td><td>3002.0,1760.0</td><td>1000.0,1789.0</td><td>997.41,1790.62</td><td>3.05</td></tr>
+  </tbody></table>
+  </details>
+</section>
+
+<section id="a3">
+  <h2>TASK A.3 · Warp the Images</h2>
+  <p>We implement inverse warping with two interpolation schemes:</p>
+  <ul>
+    <li><strong>Nearest Neighbor</strong> — rounds coordinates to the nearest pixel; fast but produces jaggies on edges.</li>
+    <li><strong>Bilinear</strong> — samples the four neighbors and averages by area weights; slower but much smoother.</li>
+  </ul>
+
+  <h3>Rectification Example</h3>
+  <p>Using a single photo containing a planar rectangle, I clicked the four corners in the order <em>top-left → top-right → bottom-right → bottom-left</em> and mapped them to a canonical rectangle of size chosen to match the object's aspect ratio. This yields a fronto-parallel, metric-correct view.</p>
+
+  <p class="muted">Nearest is typically ~3× faster; bilinear gives visibly cleaner results on slanted lines and text.</p>
+</section>
+<div class="grid" style="margin-top:12px;">
+    <div class="imgbox"><img src="data/art.jpg" alt="original"><div class="muted">Original</div></div>
+    <div class="imgbox"><img src="out/rectified_bilinear.png" alt="bilinear"><div class="muted">Bilinear</div></div>
+    <div class="imgbox"><img src="out/rectified_nearest.png" alt="nearest"><div class="muted">Nearest</div></div>
+  </div>
+
+<section id="a4">
+  <h2>TASK A.4 · Blend the Images into a Mosaic</h2>
+  <p>I warp <strong>IMG_2964</strong> → <strong>IMG_2963</strong> and feather-blend using a soft edge alpha (distance-transform ramp) to suppress seams.</p>
+  <h3>Reproduce</h3>
+  <div class="grid" style="margin-top:12px;">
+    <div class="imgbox"><img src="out/mosaic_2961_2962.png" alt="mosaic"><div class="muted">Final mosaic</div></div>
+  </div>
+
+  <h3>Feather Blending</h3>
+  <p>Each image has a support mask; I compute a smooth alpha by normalizing interior vs. exterior distance transforms, then take a weighted average per pixel. This fades seams while preserving detail where only one image contributes.</p>
+</section>
+
+</main>
+</body>
+</html>
