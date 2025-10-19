@@ -1,12 +1,12 @@
 <!doctype html>
+
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>CS180/280A · Project 3 — Warping & Mosaicing</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>CS180/280A · Project 3 — Warping, Rectification & Automatic Mosaics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet"/>
 <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 <style>
   :root { --bg:#f8fafc; --ink:#0f172a; --muted:#475569; --card:#ffffff; --border:#e2e8f0; --pill:#eef2ff; --accent:#4338ca; }
@@ -29,170 +29,443 @@
   th { text-align:left; color:#334155; }
   .pill { display:inline-block; background:var(--pill); border:1px solid #c7d2fe; color:#3730a3; border-radius:999px; padding:4px 10px; margin-right:8px; font-weight:600; }
   details summary { cursor:pointer; }
-  .cmd { white-space:pre-wrap; }
+  .caption { font-size:13px; color:#556; margin-top:6px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Project 3: Stitching Photo Mosaics</h1>
+  <h1>Project 3: Warping, Rectification & Automatic Mosaics</h1>
   <nav>
     <a href="#overview">Overview</a>
     <a href="#a1">A.1</a>
     <a href="#a2">A.2</a>
     <a href="#a3">A.3</a>
     <a href="#a4">A.4</a>
+    <a href="#b1">B.1</a>
+    <a href="#b2">B.2</a>
+    <a href="#b3">B.3</a>
+    <a href="#b4">B.4</a>
+    <a href="#b5">B.5</a>
+    <a href="#disc">Discussion</a>
   </nav>
 </header>
 <main>
 
 <section id="overview">
   <h2>Overview</h2>
-  <p class="muted">This project implements point picking, normalized DLT homography recovery, inverse warping (nearest &amp; bilinear), planar rectification, and feather-blended mosaics. Below I show a full walk-through using the pair of images I took.</p>
+  <p>
+    This project implements a full pipeline for planar image warping and panorama stitching. Part A focuses on
+    manual homography recovery and inverse warping/rectification; Part B builds an <em>automatic</em> system
+    that detects and matches features, estimates a robust homography with RANSAC, and blends the images into a mosaic.
+  </p>
+  <p>
+    All code for the auto-stitch pipeline lives in main.py. I added: (1) Harris from harris.py,
+    (2) vectorized ANMS, (3) 40→8 normalized descriptors, (4) Lowe-ratio matching, (5) 4-point RANSAC with inlier refit,
+    (6) distance-transform feathering masks for seam-aware blending, and (7) a Bells & Whistles multiscale detector.
+  </p>
 </section>
 
 <section id="a1">
-  <h2>TASK A.1 · Shoot the Pictures</h2>
-  <p>Two overlapping photos were captured by rotating the camera around a fixed center of projection so their relation is a projective transform.</p>
+  <h2>A.1 · Shoot the Pictures</h2>
+  <p>
+    I captured pairs by rotating the camera about (approximately) a fixed center of projection to best satisfy a
+    single projective transform between views. Below are source images I took for this project.
+  </p>
   <div class="grid">
-    <div class="imgbox"><img src="data/IMG_2961.jpg" alt="left image"><div class="muted">Left image</div></div>
-    <div class="imgbox"><img src="data/IMG_2962.jpg" alt="right image"><div class="muted">Right image</div></div>
+    <div class="imgbox"><img src="data/desk_left.jpg" alt="desk_left"/><div class="caption">Desk (Left)</div></div>
+    <div class="imgbox"><img src="data/desk_right.jpg" alt="desk_right"/><div class="caption">Desk (Right)</div></div>
   </div>
-  <p class="muted">Tip: aim for 30–50% overlap and avoid moving objects; parallax from large translations can cause ghosting.</p>
+  <div class="grid">
+    <div class="imgbox"><img src="data/street_left.jpg" alt="street_left"/><div class="caption">Street (Left)</div></div>
+    <div class="imgbox"><img src="data/street_right.jpg" alt="street_right"/><div class="caption">Street (Right)</div></div>
+  </div>
+  <div class="grid">
+    <div class="imgbox"><img src="data/patio_left.jpg" alt="patio_left"/><div class="caption">Patio (Left)</div></div>
+    <div class="imgbox"><img src="data/patio_right.jpg" alt="patio_right"/><div class="caption">Patio (Right)</div></div>
+  </div>
+  <ul>
+    <li>Overlap: ~50–60% to ensure enough common structure for matching.</li>
+    <li>Avoided strong barrel distortion and moving objects.</li>
+    <li>Varied viewpoints tested (indoor wall/desk scenes) to study parallax limits of a single homography.</li>
+  </ul>
 </section>
 
 <section id="a2">
-  <h2>TASK A.2 · Recover Homographies</h2>
-  <h3>Correspondences</h3>
-  <p>I manually clicked 11 pairs of features (corners/edges). Here is a visualization of the correspondences I used.</p>
-  <div class="grid">
-    <div class="imgbox"><img src="data/IMG_2961_points.jpg" alt="data/IMG_2961_points"><div class="muted">IMG_2961_points.jpg</div></div>
-    <div class="imgbox"><img src="data/IMG_2962_points.jpg" alt="data/IMG_2962_points"><div class="muted">IMG_2962_points.jpg</div></div>
-  </div>
-
-  <h3>System of Equations (DLT)</h3>
-  <p>For a correspondence \((x,y)\mapsto(x',y')\), two rows are added to \(A\mathbf{h}=0\):</p>
+  <h2>A.2 · Recover Homographies (Normalized DLT)</h2>
+  <p>
+    Given pairs \((x,y) \leftrightarrow (x',y')\), we solve for a 3×3 matrix \(H\) so that \(\mathbf{p}' \sim H\,\mathbf{p}\)
+    (homogeneous coordinates). I use the normalized DLT for stability: translate/scale each point set to zero-mean unit
+    average distance, form a 2N×9 matrix \(A\) (two rows per correspondence), then take the smallest right singular
+    vector of \(A\) via SVD. Finally, denormalize and re-scale so \(H_{33}=1\).
+  </p>
   <p>\[
-  \begin{bmatrix}
-  -x & -y & -1 & 0 & 0 & 0 & x x' & y x' & x' \\
-  0 & 0 & 0 & -x & -y & -1 & x y' & y y' & y'
-  \end{bmatrix}
-  \]</p>
-  <p>I use <strong>normalized DLT</strong> (Hartley): both point sets are translated to zero mean and scaled so mean distance is \(\sqrt 2\). Solve via SVD (last right singular vector), then de-normalize and scale to \(H_{33}=1\).</p>
-
-  <h3>A matrix (first 8 rows of 22)</h3>
-  <table><thead><tr><th>a1</th><th>a2</th><th>a3</th><th>a4</th><th>a5</th><th>a6</th><th>a7</th><th>a8</th><th>a9</th></tr></thead>
-  <tbody>
-  <tr><td>1.0673</td><td>1.8994</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>1.3861</td><td>2.4668</td><td>-1.2987</td></tr>
-  <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>1.0673</td><td>1.8994</td><td>-1.0000</td><td>2.1208</td><td>3.7743</td><td>-1.9871</td></tr>
-  <tr><td>0.8760</td><td>1.5845</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.9078</td><td>1.6421</td><td>-1.0363</td></tr>
-  <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.8760</td><td>1.5845</td><td>-1.0000</td><td>1.4222</td><td>2.5723</td><td>-1.6234</td></tr>
-  <tr><td>0.6707</td><td>-0.8298</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.3632</td><td>-0.4493</td><td>-0.5415</td></tr>
-  <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.6707</td><td>-0.8298</td><td>-1.0000</td><td>-0.6139</td><td>0.7594</td><td>0.9152</td></tr>
-  <tr><td>0.1412</td><td>1.3722</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.0310</td><td>0.3009</td><td>-0.2193</td></tr>
-  <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.1412</td><td>1.3722</td><td>-1.0000</td><td>0.1883</td><td>1.8298</td><td>-1.3334</td></tr>
-  </tbody></table>
-  <details><summary class="pill">Show full A (22×9)</summary><pre><code>[[ 1.06728967  1.89940663 -1.          0.          0.          0.
-   1.38610093  2.46678046 -1.29871109]
- [ 0.          0.          0.          1.06728967  1.89940663 -1.
-   2.12079919  3.77428936 -1.98708865]
- [ 0.87601304  1.58449999 -1.          0.          0.          0.
-   0.90784081  1.64206888 -1.03633253]
- [ 0.          0.          0.          0.87601304  1.58449999 -1.
-   1.42215564  2.57234251 -1.62344117]
- [ 0.67074056 -0.82978432 -1.          0.          0.          0.
-   0.36320318 -0.44932471 -0.54149578]
- [ 0.          0.          0.          0.67074056 -0.82978432 -1.
-  -0.61385267  0.75940737  0.91518645]
- [ 0.14123086  1.37222958 -1.          0.          0.          0.
-   0.03096861  0.3008977  -0.2192765 ]
- [ 0.          0.          0.          0.14123086  1.37222958 -1.
-   0.18832342  1.82979105 -1.33344382]
- [-0.43493167  0.13826204 -1.          0.          0.          0.
-   0.19692874 -0.06260241  0.45278086]
- [ 0.          0.          0.         -0.43493167  0.13826204 -1.
-  -0.05041521  0.01602668 -0.11591525]
- [ 0.78737265 -1.62288255 -1.          0.          0.          0.
-   0.46622716 -0.96095783 -0.59213024]
- [ 0.          0.          0.          0.78737265 -1.62288255 -1.
-  -1.38385445  2.85231299  1.75755972]
- [-0.37428299 -1.24732721 -1.          0.          0.          0.
-   0.19875703  0.6623733   0.53103411]
- [ 0.          0.          0.         -0.37428299 -1.24732721 -1.
-   0.44677261  1.48890452  1.19367597]
- [-0.60754717  1.36523165 -1.          0.          0.          0.
-   0.298857   -0.67156767  0.49190749]
- [ 0.          0.          0.         -0.60754717  1.36523165 -1.
-  -0.76818072  1.72619457 -1.26439683]
- [-1.85551056 -1.34529817 -1.          0.          0.          0.
-   3.17614723  2.30279749  1.71173762]
- [ 0.          0.          0.         -1.85551056 -1.34529817 -1.
-   2.05259631  1.48819097  1.10621646]
- [-0.52823735 -0.10899799 -1.          0.          0.          0.
-   0.29996442  0.06189551  0.56785918]
- [ 0.          0.          0.         -0.52823735 -0.10899799 -1.
-   0.06034656  0.01245208  0.11424138]
- [ 0.25786295 -1.20533966 -1.          0.          0.          0.
-   0.01737303 -0.0812075  -0.06737312]
- [ 0.          0.          0.          0.25786295 -1.20533966 -1.
-  -0.3190811   1.4914942   1.23740573]]</code></pre></details>
-
-  <h3>Recovered Homography \(H\) (IMG_2963→IMG_2964)</h3>
-  <table><tbody>
-  <tr><td>3.40187491</td><td>0.30172659</td><td>-7971.77295389</td></tr>
-  <tr><td>0.63896041</td><td>2.83108044</td><td>-1924.95290764</td></tr>
-  <tr><td>0.00058304</td><td>0.00001624</td><td>1.00000000</td></tr>
-  </tbody></table>
-
-  <h3>Reprojection Error</h3>
-  <p><strong>RMSE:</strong> 2.10 px</p>
-  <details><summary class="pill">Per-point details</summary>
-  <table><thead><tr><th>#</th><th>(x,y) in IMG_2963</th><th>GT (x',y') in IMG_2964</th><th>pred (x',y')</th><th>error (px)</th></tr></thead>
-  <tbody>
-  <tr><td>1</td><td>2655.0,429.0</td><td>465.0,388.0</td><td>465.63,385.93</td><td>2.17</td></tr>
-  <tr><td>2</td><td>2737.0,564.0</td><td>579.0,546.0</td><td>579.41,545.35</td><td>0.77</td></tr>
-  <tr><td>3</td><td>2825.0,1599.0</td><td>794.0,1649.0</td><td>793.47,1648.67</td><td>0.63</td></tr>
-  <tr><td>4</td><td>3052.0,655.0</td><td>934.0,672.0</td><td>934.88,673.64</td><td>1.86</td></tr>
-  <tr><td>5</td><td>3299.0,1184.0</td><td>1226.0,1201.0</td><td>1226.18,1201.28</td><td>0.33</td></tr>
-  <tr><td>6</td><td>2775.0,1939.0</td><td>772.0,2015.0</td><td>775.06,2014.63</td><td>3.08</td></tr>
-  <tr><td>7</td><td>3273.0,1778.0</td><td>1260.0,1770.0</td><td>1259.39,1770.42</td><td>0.74</td></tr>
-  <tr><td>8</td><td>3373.0,658.0</td><td>1243.0,702.0</td><td>1243.18,703.03</td><td>1.04</td></tr>
-  <tr><td>9</td><td>3908.0,1820.0</td><td>1773.0,1732.0</td><td>1775.01,1730.51</td><td>2.51</td></tr>
-  <tr><td>10</td><td>3339.0,1290.0</td><td>1276.0,1301.0</td><td>1272.46,1300.87</td><td>3.54</td></tr>
-  <tr><td>11</td><td>3002.0,1760.0</td><td>1000.0,1789.0</td><td>997.41,1790.62</td><td>3.05</td></tr>
-  </tbody></table>
-  </details>
+    \begin{bmatrix}
+    -x & -y & -1 & 0 & 0 & 0 & x x' & y x' & x' \\
+    0 & 0 & 0 & -x & -y & -1 & x y' & y y' & y'
+    \end{bmatrix}
+    \]</p>
+    <p>I use <strong>normalized DLT</strong> (Hartley): both point sets are translated to zero mean and scaled so mean distance is \(\sqrt 2\). Solve via SVD (last right singular vector), then de-normalize and scale to \(H_{33}=1\).</p>
+  
+    <h3>A matrix (first 8 rows of 22)</h3>
+    <table><thead><tr><th>a1</th><th>a2</th><th>a3</th><th>a4</th><th>a5</th><th>a6</th><th>a7</th><th>a8</th><th>a9</th></tr></thead>
+    <tbody>
+    <tr><td>1.0673</td><td>1.8994</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>1.3861</td><td>2.4668</td><td>-1.2987</td></tr>
+    <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>1.0673</td><td>1.8994</td><td>-1.0000</td><td>2.1208</td><td>3.7743</td><td>-1.9871</td></tr>
+    <tr><td>0.8760</td><td>1.5845</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.9078</td><td>1.6421</td><td>-1.0363</td></tr>
+    <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.8760</td><td>1.5845</td><td>-1.0000</td><td>1.4222</td><td>2.5723</td><td>-1.6234</td></tr>
+    <tr><td>0.6707</td><td>-0.8298</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.3632</td><td>-0.4493</td><td>-0.5415</td></tr>
+    <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.6707</td><td>-0.8298</td><td>-1.0000</td><td>-0.6139</td><td>0.7594</td><td>0.9152</td></tr>
+    <tr><td>0.1412</td><td>1.3722</td><td>-1.0000</td><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.0310</td><td>0.3009</td><td>-0.2193</td></tr>
+    <tr><td>0.0000</td><td>0.0000</td><td>0.0000</td><td>0.1412</td><td>1.3722</td><td>-1.0000</td><td>0.1883</td><td>1.8298</td><td>-1.3334</td></tr>
+    </tbody></table>
+    <details><summary class="pill">Show full A (22×9)</summary><pre>[[ 1.06728967  1.89940663 -1.          0.          0.          0.
+     1.38610093  2.46678046 -1.29871109]
+   [ 0.          0.          0.          1.06728967  1.89940663 -1.
+     2.12079919  3.77428936 -1.98708865]
+   [ 0.87601304  1.58449999 -1.          0.          0.          0.
+     0.90784081  1.64206888 -1.03633253]
+   [ 0.          0.          0.          0.87601304  1.58449999 -1.
+     1.42215564  2.57234251 -1.62344117]
+   [ 0.67074056 -0.82978432 -1.          0.          0.          0.
+     0.36320318 -0.44932471 -0.54149578]
+   [ 0.          0.          0.          0.67074056 -0.82978432 -1.
+    -0.61385267  0.75940737  0.91518645]
+   [ 0.14123086  1.37222958 -1.          0.          0.          0.
+     0.03096861  0.3008977  -0.2192765 ]
+   [ 0.          0.          0.          0.14123086  1.37222958 -1.
+     0.18832342  1.82979105 -1.33344382]
+   [-0.43493167  0.13826204 -1.          0.          0.          0.
+     0.19692874 -0.06260241  0.45278086]
+   [ 0.          0.          0.         -0.43493167  0.13826204 -1.
+    -0.05041521  0.01602668 -0.11591525]
+   [ 0.78737265 -1.62288255 -1.          0.          0.          0.
+     0.46622716 -0.96095783 -0.59213024]
+   [ 0.          0.          0.          0.78737265 -1.62288255 -1.
+    -1.38385445  2.85231299  1.75755972]
+   [-0.37428299 -1.24732721 -1.          0.          0.          0.
+     0.19875703  0.6623733   0.53103411]
+   [ 0.          0.          0.         -0.37428299 -1.24732721 -1.
+     0.44677261  1.48890452  1.19367597]
+   [-0.60754717  1.36523165 -1.          0.          0.          0.
+     0.298857   -0.67156767  0.49190749]
+   [ 0.          0.          0.         -0.60754717  1.36523165 -1.
+    -0.76818072  1.72619457 -1.26439683]
+   [-1.85551056 -1.34529817 -1.          0.          0.          0.
+     3.17614723  2.30279749  1.71173762]
+   [ 0.          0.          0.         -1.85551056 -1.34529817 -1.
+     2.05259631  1.48819097  1.10621646]
+   [-0.52823735 -0.10899799 -1.          0.          0.          0.
+     0.29996442  0.06189551  0.56785918]
+   [ 0.          0.          0.         -0.52823735 -0.10899799 -1.
+     0.06034656  0.01245208  0.11424138]
+   [ 0.25786295 -1.20533966 -1.          0.          0.          0.
+     0.01737303 -0.0812075  -0.06737312]
+   [ 0.          0.          0.          0.25786295 -1.20533966 -1.
+    -0.3190811   1.4914942   1.23740573]]</pre></details>
+  
+    <h3>Recovered Homography \(H\) (Desk_Left→Desk_Right)</h3>
+    <table><tbody>
+    <tr><td>3.40187491</td><td>0.30172659</td><td>-7971.77295389</td></tr>
+    <tr><td>0.63896041</td><td>2.83108044</td><td>-1924.95290764</td></tr>
+    <tr><td>0.00058304</td><td>0.00001624</td><td>1.00000000</td></tr>
+    </tbody></table>
+  
+    <h3>Reprojection Error</h3>
+    <p><strong>RMSE:</strong> 2.10 px</p>
+    <details><summary class="pill">Per-point details</summary>
+    <table><thead><tr><th>#</th><th>(x,y) in Desk_Left</th><th>GT (x',y') in Desk_Right</th><th>pred (x',y')</th><th>error (px)</th></tr></thead>
+    <tbody>
+    <tr><td>1</td><td>2655.0,429.0</td><td>465.0,388.0</td><td>465.63,385.93</td><td>2.17</td></tr>
+    <tr><td>2</td><td>2737.0,564.0</td><td>579.0,546.0</td><td>579.41,545.35</td><td>0.77</td></tr>
+    <tr><td>3</td><td>2825.0,1599.0</td><td>794.0,1649.0</td><td>793.47,1648.67</td><td>0.63</td></tr>
+    <tr><td>4</td><td>3052.0,655.0</td><td>934.0,672.0</td><td>934.88,673.64</td><td>1.86</td></tr>
+    <tr><td>5</td><td>3299.0,1184.0</td><td>1226.0,1201.0</td><td>1226.18,1201.28</td><td>0.33</td></tr>
+    <tr><td>6</td><td>2775.0,1939.0</td><td>772.0,2015.0</td><td>775.06,2014.63</td><td>3.08</td></tr>
+    <tr><td>7</td><td>3273.0,1778.0</td><td>1260.0,1770.0</td><td>1259.39,1770.42</td><td>0.74</td></tr>
+    <tr><td>8</td><td>3373.0,658.0</td><td>1243.0,702.0</td><td>1243.18,703.03</td><td>1.04</td></tr>
+    <tr><td>9</td><td>3908.0,1820.0</td><td>1773.0,1732.0</td><td>1775.01,1730.51</td><td>2.51</td></tr>
+    <tr><td>10</td><td>3339.0,1290.0</td><td>1276.0,1301.0</td><td>1272.46,1300.87</td><td>3.54</td></tr>
+    <tr><td>11</td><td>3002.0,1760.0</td><td>1000.0,1789.0</td><td>997.41,1790.62</td><td>3.05</td></tr>
+    </tbody></table>
+    </details>
 </section>
 
 <section id="a3">
-  <h2>TASK A.3 · Warp the Images</h2>
-  <p>We implement inverse warping with two interpolation schemes:</p>
-  <ul>
-    <li><strong>Nearest Neighbor</strong> — rounds coordinates to the nearest pixel; fast but produces jaggies on edges.</li>
-    <li><strong>Bilinear</strong> — samples the four neighbors and averages by area weights; slower but much smoother.</li>
-  </ul>
-
-  <h3>Rectification Example</h3>
-  <p>Using a single photo containing a planar rectangle, I clicked the four corners in the order <em>top-left → top-right → bottom-right → bottom-left</em> and mapped them to a canonical rectangle of size chosen to match the object's aspect ratio. This yields a fronto-parallel, metric-correct view.</p>
-
-  <p class="muted">Nearest is typically ~3× faster; bilinear gives visibly cleaner results on slanted lines and text.</p>
-</section>
-<div class="grid" style="margin-top:12px;">
-    <div class="imgbox"><img src="data/art.jpg" alt="original"><div class="muted">Original</div></div>
-    <div class="imgbox"><img src="out/rectified_bilinear.png" alt="bilinear"><div class="muted">Bilinear</div></div>
-    <div class="imgbox"><img src="out/rectified_nearest.png" alt="nearest"><div class="muted">Nearest</div></div>
+  <h2>A.3 · Warp & Rectify (Inverse Mapping)</h2>
+  <p>
+    Warping uses <em>inverse</em> mapping: for each pixel \((x_o,y_o)\) in the output canvas, map back through \(H^{-1}\)
+    to subpixel coordinates \((x_i,y_i)\) in the source image and interpolate. I implemented both nearest-neighbor and
+    bilinear interpolation from scratch and verified against OpenCV’s remap.
+  </p>
+  <div class="grid">
+    <div class="imgbox"><img src="data/art.jpg" alt="original art"/><div class="caption">Original planar object</div></div>
+    <div class="imgbox"><img src="out/rectified_bilinear.png" alt="rectified bilinear"/><div class="caption">Rectified (Bilinear)</div></div>
+    <div class="imgbox"><img src="out/rectified_nearest.png" alt="rectified nearest"/><div class="caption">Rectified (Nearest)</div></div>
   </div>
+  <ul>
+    <li><b>Bounding box:</b> Warp the four source corners to predict output bounds and allocate a tight canvas.</li>
+    <li><b>Alpha mask:</b> A binary support mask is carried alongside each warp to drive blending later on.</li>
+    <li><b>Interpolation trade-off:</b> nearest is fast but jagged; bilinear is smooth but slightly blurs subpixel detail.</li>
+  </ul>
+</section>
 
 <section id="a4">
-  <h2>TASK A.4 · Blend the Images into a Mosaic</h2>
-  <p>I warp <strong>IMG_2964</strong> → <strong>IMG_2963</strong> and feather-blend using a soft edge alpha (distance-transform ramp) to suppress seams.</p>
-  <h3>Reproduce</h3>
-  <div class="grid" style="margin-top:12px;">
-    <div class="imgbox"><img src="out/mosaic_2961_2962.png" alt="mosaic"><div class="muted">Final mosaic</div></div>
+  <h2>A.4 · Blend into a Mosaic</h2>
+  <p>
+    I warp the right image into the left image’s frame. Rather than overwrite, I compute distance-transform based <em>soft
+    alphas</em> so each image dominates near its interior and fades at the boundary. In overlap, the per-pixel weighted
+    average avoids hard seams and reduces ghosting. For tougher scenes, a Laplacian-pyramid multiband blend can be used.
+  </p>
+  <div class="grid">
+    <div class="imgbox"><img src="out/mosaic_2961_2962.png" alt="manual mosaic"/><div class="caption">Manual-point mosaic (reference)</div></div>
   </div>
-
-  <h3>Feather Blending</h3>
-  <p>Each image has a support mask; I compute a smooth alpha by normalizing interior vs. exterior distance transforms, then take a weighted average per pixel. This fades seams while preserving detail where only one image contributes.</p>
+  <div class="grid">
+    <div class="imgbox"><img src="out/mosaic_2274_2276.png" alt="manual mosaic"/><div class="caption">Manual-point mosaic (reference)</div></div>
+  </div>
+  <div class="grid">
+    <div class="imgbox"><img src="output/patio_mosaic.jpg" alt="manual mosaic"/><div class="caption">Manual-point mosaic (reference)</div></div>
+  </div>
 </section>
+
+<section id="a5">
+  <h2>A.5 · Bells & Whistles — Cylindrical / Spherical Mapping</h2>
+  <p>
+    Very wide fields of view (≫60–70°) suffer from perspective stretch when stitched on a plane. A common remedy is to
+    pre-warp each image onto a <em>cylindrical</em> (or spherical) surface, blend there, and optionally map back. After
+    cylindrical warping, camera yaw becomes (approximately) a horizontal translation, so mosaicing reduces to aligning
+    images along the x-axis with minimal vertical drift.
+  </p>
+
+  <h3>Cylindrical projection (what we compute)</h3>
+  <p>
+    Let (u, v) be pixel coordinates in the original image relative to the principal point (cx, cy), and let f be the focal
+    length in <em>pixels</em>. To warp to a unit cylinder, we map each output pixel (u', v') to a source location (u, v)
+    by the inverse of:
+  </p>
+  <pre><code>u' = f * atan((u - cx) / f)
+v' = f * (v - cy) / sqrt((u - cx)^2 + f^2)</code></pre>
+  <p>
+    We then sample the source image at (u, v) with bilinear interpolation. For spherical projection, the vertical mapping
+    uses atan((v - cy) / sqrt((u - cx)^2 + f^2)).
+  </p>
+
+  <h3>Choosing the focal length f</h3>
+  <ul>
+    <li><b>From EXIF:</b> if you have focal length in mm and sensor width in mm, convert to pixels:
+        f_px = f_mm * (image_width_px / sensor_width_mm).</li>
+    <li><b>By appearance:</b> for ~4–8K-wide phone images, f ≈ 700–1400 px is a good starting range.</li>
+  </ul>
+
+  <h3>Pipeline on a cylinder</h3>
+  <ol>
+    <li><b>Pre-warp</b> each image into cylindrical coordinates with inverse mapping and bilinear sampling.</li>
+    <li><b>Detect/match</b> features on the cylindrical images (Harris+ANMS → 40→8 descriptors → Lowe ratio).</li>
+    <li><b>Estimate translation</b> (or a weak homography) with RANSAC — on a cylinder, yaw ≈ x-shift.</li>
+    <li><b>Blend</b> using the same distance-transform feathering as A.4/B.4; then crop black borders.</li>
+  </ol>
+
+  <h3>Notes & pitfalls</h3>
+  <ul>
+    <li><b>Principal point:</b> center coordinates first; a poor (cx, cy) leads to vertical bowing.</li>
+    <li><b>Vertical scaling:</b> the sqrt((u-cx)^2 + f^2) denominator keeps vertical lines straight after wrapping.</li>
+    <li><b>Exposure seams:</b> optionally match gain/bias in the overlap before blending, same as A.4.</li>
+  </ul>
+  <div class="grid">
+    <div class="imgbox"><img src="output/cylindrical.png" alt="cylindrical"/><div class="caption">Cylindrical projection</div></div>
+  </div>
+</section>
+
+
+<section id="b1">
+  <h2>B.1 · Harris Corners (from harris.py) & ANMS</h2>
+  <p>
+    I call get_harris_corners(im, edge_discard=20) to compute a Harris response map \(h\) and raw peaks (ys,xs).
+    Scores for ANMS are sampled directly as \(h[y,x]\). ANMS selects a subset of size \(N\) by maximizing the minimum
+    distance to any <em>stronger</em> corner, i.e., radius \(r_i = \min_{j: h_j > c\,h_i} \|\mathbf{x}_i-\mathbf{x}_j\|\). I
+    use a vectorized implementation with an initial top-<em>k</em> pruning for speed.
+  </p>
+  <div class="grid">
+    <div class="imgbox"><img src="output/desk_corners_left.png" alt="harris L"/><div class="caption">Left: Harris/ANMS corners</div></div>
+  </div>
+  <div class="grid">
+    <div class="imgbox"><img src="output/desk_corners_right.png" alt="harris R"/><div class="caption">Right: Harris/ANMS corners</div></div>
+  </div>
+  <ul>
+    <li><b>Edge handling:</b> discard within 20 px to avoid spurious peaks at borders.</li>
+    <li><b>Parameters:</b> ANMS N≈600, robust factor c≈0.9–1.1, preprune top-k≈1200–1500 by Harris score.</li>
+  </ul>
+</section>
+
+<section id="b2">
+  <h2>B.2 · Feature Descriptors (40×40 → 8×8)</h2>
+  <p>
+    For each retained corner, I extract a 40×40 window (zero-padded at borders), apply a light Gaussian blur (σ≈1),
+    and downsample to 8×8 using area resampling. The 64D vector is then bias/gain normalized: subtract mean and divide by
+    standard deviation (ε=1e−6) to reduce sensitivity to illumination and local contrast.
+  </p>
+  <ul>
+    <li><b>Why 40→8:</b> a larger antialiased context stabilizes the descriptor against jitter while keeping it compact.</li>
+    <li><b>Orientation:</b> axis-aligned (no rotation invariance in this base version).</li>
+  </ul>
+  <div class="grid">
+    <div class="imgbox"><img src="output/b_auto_2961_2962_desc_montage.png" alt="descriptor grid"/><div class="caption">Random sample of 8×8 descriptors</div></div>
+  </div>
+</section>
+
+<section id="b3">
+  <h2>B.3 · Matching with Lowe Ratio</h2>
+  <p>
+    I compute Euclidean distances from each descriptor in image 2 to all descriptors in image 1, find the best (NN) and
+    second-best (2NN), and accept the match if \(\frac{\|d-d_{\text{NN}}\|}{\|d-d_{\text{2NN}}\|} < \tau\). Typical \(\tau\)
+    is 0.60–0.75 (I default to 0.65). This removes many ambiguous correspondences in textured regions.
+  </p>
+  <div class="grid">
+    <div class="imgbox"><img src="output/matched_features.png" alt="matches"/><div class="caption">Matched features (random subset drawn)</div></div>
+  </div>
+</section>
+
+<section id="b4">
+  <h2>B.4 · 4-Point RANSAC Homography & Automatic Mosaic</h2>
+  <p>
+    RANSAC samples 4 matches to hypothesize \(H\) (right→left), projects all left points, and counts inliers whose
+    reprojection error is below a tolerance (2–4 px). The best \(H\) is refit using all inliers via normalized DLT.
+    Finally, I <em>invert</em> direction as needed so that the right image is warped into the left frame for blending.
+  </p>
+  <ul>
+    <li><b>Geometry checks:</b> If blend appears left↔right reversed, the mapping direction is wrong (invert \(H\)).</li>
+    <li><b>Parallax:</b> A single \(H\) assumes a dominant plane or pure rotation. Large depth variation causes kinks/ghosts.</li>
+  </ul>
+  <div class="grid">
+    <div class="imgbox"><img src="output/ransac_inliers_desk.png" alt="inliers"/><div class="caption">Inlier matches after RANSAC</div></div>
+  </div>
+  <div class="grid">
+    <div class="imgbox"><img src="output/desk_mosaic.jpg" alt="auto mosaic"/><div class="caption">Automatic mosaic (single-scale)</div></div>
+</div>
+
+  <details><summary class="pill">Saved homography</summary><table>
+    <tbody>
+      <tr>
+        <td>1.62593301</td>
+        <td>0.01498929</td>
+        <td>-2178.48775289</td>
+      </tr>
+      <tr>
+        <td>0.17961207</td>
+        <td>1.35171383</td>
+        <td>-416.41649075</td>
+      </tr>
+      <tr>
+        <td>0.00015966</td>
+        <td>-0.00002208</td>
+        <td>1.00000000</td>
+      </tr>
+    </tbody>
+  </table>
+    
+  </details>
+  
+  <div class="grid">
+    <div class="imgbox"><img src="output/patio_mosaic.jpg" alt="auto mosaic"/><div class="caption">Automatic mosaic (single-scale)</div></div>
+</div>
+<div class="grid">
+  <div class="imgbox"><img src="output/street_mosaic.jpg" alt="auto mosaic"/><div class="caption">Automatic mosaic (single-scale)</div></div>
+</div>
+</section>
+
+
+<section id="b5">
+  <h2>B.5 · Multiscale Features (Gaussian Pyramid)</h2>
+  <p>
+    To improve robustness under moderate scale differences and blur, I detect at multiple pyramid levels (L=3), lift
+    coordinates back to full resolution (multiply by \(2^\ell\)), then greedily suppress near-duplicates within a small
+    radius at full scale. Descriptors are still computed on (blurred) 40×40 windows sampled from the appropriately
+    downscaled image so that the effective physical support is comparable across levels.
+  </p>
+  <ul>
+    <li><b>Pyramid:</b> downscale ×2 per level with anti-aliasing.</li>
+    <li><b>Merge:</b> concatenate level detections, sort by Harris score, suppress within r≈6 px at full res.</li>
+    <li><b>Matching:</b> same Lowe ratio; RANSAC run on full-res coordinates.</li>
+  </ul>
+  <div class="grid">
+    <div class="imgbox"><img src="output/multiscale_layer0.png" alt="L0"/><div class="caption">Layer 0 corners</div></div>
+    <div class="imgbox"><img src="output/multiscale_layer1.png" alt="L1"/><div class="caption">Layer 1 corners</div></div>
+    <div class="imgbox"><img src="output/multiscale_layer2.png" alt="L2"/><div class="caption">Layer 2 corners</div></div>
+  </div>
+  <div class="grid" style="margin-top:12px;">
+    <div class="imgbox"><img src="output/mosaic_auto_multiscale_desk.jpg" alt="ms mosaic"/><div class="caption">Automatic mosaic (multiscale)</div></div>
+  </div>
+</section>
+
+<section id="disc">
+  <h2>Discussion, Design Choices & Ablations</h2>
+  <h3>Blending</h3>
+  <p>
+    I use distance-transform feathering to produce soft alphas that taper near image borders. This reduces double-edges
+    without washing out detail. In strong exposure differences a quick gain/bias match in the overlap stabilizes color.
+    For hard scenes I tested a 4-level Laplacian pyramid; it removes low-frequency seams while preserving edges.
+  </p>
+  <h3>Parameter Sensitivity</h3>
+  <ul>
+    <li><b>Lowe ratio:</b> 0.60–0.65 typically yields clean inliers; 0.75 yields more matches but more outliers.</li>
+    <li><b>RANSAC tol:</b> 2–3 px for high-res inputs; relaxing to 4–5 px increases inliers but can bias \(H\).</li>
+    <li><b>ANMS:</b> N≈600 works well on 12–24 MP phone images; top-k pruning keeps ANMS cost bounded.</li>
+  </ul>
+  <h3>Failure Modes</h3>
+  <ul>
+    <li><b>Parallax:</b> Large depth variation breaks the planar model. Remedy: shoot with fixed COP, use more distant scene, or switch to cylindrical/spherical mapping.</li>
+    <li><b>Textureless Regions:</b> Few corners → unstable \(H\). Remedy: lower the ratio threshold, increase ANMS N, or hand-pick a planar region.</li>
+    <li><b>Direction Errors:</b> If the mosaic appears swapped L↔R, invert the mapping (use \(H_{RL} = H_{LR}^{-1}\)).</li>
+  </ul>
+
+</section>
+
+<section id="expanded-details">
+  <h2>Expanded Implementation Details</h2>
+  <h3>Homography: system of equations</h3>
+  <p>
+    For each correspondence (x, y) to (x', y'), we add two rows to matrix A. Stacking all pairs yields a 2N×9 system A h = 0,
+    where h is the 9-vector of H's entries. We solve by SVD, taking the right singular vector associated with the smallest singular value,
+    then normalize H so its bottom-right entry is 1. With more than four pairs, we refit H on the inliers found by RANSAC to improve accuracy.
+  </p>
+  <h3>Warping: inverse mapping and interpolation</h3>
+  <ul>
+    <li>Build an output canvas by warping all source corners and taking min/max bounds.</li>
+    <li>For each canvas pixel, map back with H⁻¹ into source coordinates and sample: nearest neighbor (fast, blocky) or bilinear (smooth).</li>
+    <li>Keep a binary support mask in parallel to identify valid samples.</li>
+  </ul>
+  <h3>Feathered blending with distance transform</h3>
+  <ol>
+    <li>Create a binary mask per warped image (1 on valid pixels, 0 on holes).</li>
+    <li>Compute a distance transform; convert to a soft alpha that tapers to 0 near borders.</li>
+    <li>Normalize alphas across images at each pixel and blend by weighted average.</li>
+    <li>Optionally compute per-image gain/bias in the overlap to match exposure before blending.</li>
+  </ol>
+  <h3>Corner detection and ANMS</h3>
+  <p>
+    Harris response is computed from harris.py. Peaks near image borders are discarded. Adaptive Non‑Maximal Suppression (ANMS)
+    retains a target count of strong, well‑spaced corners by maximizing the minimal distance to any stronger response. This produces
+    an even spatial distribution and prevents clustering, as showcased in the example.
+  </p>
+  <h3>Descriptors and matching</h3>
+  <p>
+    Around each corner we take a 40×40 window, blur slightly, then downsample to 8×8. We zero‑mean and unit‑variance normalize the
+    64‑D vector. Matching uses the Lowe ratio between nearest and second‑nearest neighbors; thresholds between 0.60 and 0.75 work well
+    depending on texture and noise.
+  </p>
+  <h3>RANSAC and robustness</h3>
+  <p>
+    We repeatedly fit H from 4 random matches, count inliers using reprojection error, and keep the best. Finally, we recompute H on all
+    inliers. If the mosaic appears reversed (left on right), we invert the mapping so the right image is warped into the left frame.
+  </p>
+  <h3>Multiscale extension</h3>
+  <p>
+    A Gaussian pyramid provides detections at multiple scales. We lift coordinates back to full resolution and suppress near duplicates.
+    Descriptors are extracted at the appropriate scale to keep physical support comparable across levels. This increases match recall under
+    moderate scale change while keeping outliers manageable with the Lowe ratio and RANSAC.
+  </p>
+</section>
+
+<footer class="muted" style="text-align:center; font-size:13px; padding:16px 0;">CS180/280A · Image Warping & Mosaicing</footer>
 
 </main>
 </body>
