@@ -868,7 +868,98 @@
   <p>Low-frequency prompt: an oil painting of a snowy mountain village</p>
   <p>High-frequency prompt: a man wearing a hat</p>
 
-
+  <h2>Bells & Whistles</h2>
+  <p>
+    For Part A bells & whistles, I explored two additional transformation-based visual anagrams beyond the standard 180°
+    flip, and I also experimented with text-conditioned image-to-image translation (SDEdit) on a custom course logo.
+  </p>
+  
+  <h3>More Visual Anagrams: 90° Rotation</h3>
+  <p>
+    In the required visual anagram (Part 1.8), the “second view” is created by flipping the latent image 180°. Here, I
+    extend the same idea to a different transformation: a <b>90° rotation</b>. The denoising loop stays identical in
+    spirit: at each timestep, I compute the CFG noise prediction for Prompt A on the original latent, then compute the
+    CFG noise prediction for Prompt B on a <b>rotated</b> version of the latent, rotate that predicted noise back to the
+    original coordinate system, and average the two noise estimates to produce a single update.
+  </p>
+  <p class="muted">
+    Intuition: Prompt A controls the upright interpretation, while Prompt B controls the interpretation after rotating
+    the image by 90°. Enforcing both constraints at every timestep produces a single image that can be read in two ways
+    depending on the rotation.
+  </p>
+  
+  <div class="grid">
+    <figure>
+      <img src="media/PartA/part1/bells/rotate.png" alt="Rotation anagram: view 1 (Prompt A)">
+      <figcaption><b>View 1 (normal):</b> aligns with Prompt A.</figcaption>
+    </figure>
+    <figure>
+      <img src="media/PartA/part1/bells/rotated.png" alt="Rotation anagram: view 2 (Prompt B, rotated 90 degrees)">
+      <figcaption><b>View 2 (rotated 90°):</b> aligns with Prompt B.</figcaption>
+    </figure>
+  </div>
+  <p>Prompt A: an artistic painting of a dragon flying over ancient mountains</p>
+  <p>Prompt B: a watercolor painting of cherry blossom trees in spring</p>
+  
+  <hr/>
+  
+  <h3>More Visual Anagrams: Jigsaw (Patch Permutation)</h3>
+  <p>
+    I also implemented a more aggressive transformation: a <b>jigsaw rearrangement</b>. Instead of rotating or flipping,
+    the transformation divides the image into a grid of patches and permutes them using a fixed permutation. During
+    sampling, Prompt A is applied to the normal latent. Prompt B is applied to a <b>jigsaw-transformed</b> latent; its
+    predicted noise is then mapped back through the inverse permutation before averaging with Prompt A’s noise.
+  </p>
+  <p class="muted">
+    This produces an illusion where the image looks like Prompt A in the original layout, but when rearranged into the
+    same patch ordering (the jigsaw view), it reveals Prompt B.
+  </p>
+  
+  <div class="grid">
+    <figure>
+      <img src="media/PartA/part1/bells/jigsaw.png" alt="Jigsaw anagram: view 1 (normal)">
+      <figcaption><b>View 1 (normal layout):</b> aligns with Prompt A.</figcaption>
+    </figure>
+    <figure>
+      <img src="media/PartA/part1/bells/jigsaw_rearranged.png" alt="Jigsaw anagram: view 2 (rearranged)">
+      <figcaption><b>View 2 (jigsaw rearranged):</b> reveals Prompt B.</figcaption>
+    </figure>
+  </div>
+  <p>Prompt A: a peaceful landscape of rolling green hills at sunrise</p>
+  <p>Prompt B: a vibrant image of a bustling street market in the rain</p>
+  
+  <hr/>
+  
+  <h3>Design a Course Logo + SDEdit Image-to-Image Translation</h3>
+  <p>
+    For the “design a course logo” bells & whistles option, I created a simple custom logo image and then applied
+    <b>SDEdit-style image-to-image translation</b>. Concretely, I start from the logo image, add noise corresponding to
+    a chosen start timestep (controlled by a <code class="inline">start_index</code>), and then run the reverse diffusion
+    process conditioned on a target text prompt. A smaller start index preserves more of the original logo structure,
+    while a larger start index gives the model more freedom to change the image.
+  </p>
+  <p class="muted">
+    In my experiment, I used a moderate start index (e.g., 10) to keep the logo’s overall structure while translating it
+    into the style described by the text prompt. After generating the 64×64 result from Stage 1, I used Stage 2 to
+    upsample to 256×256 for cleaner visualization.
+  </p>
+  
+  <div class="grid">
+    <figure>
+      <img src="media/PartA/part1/bells/logo.png" alt="Original custom course logo">
+      <figcaption><b>Original logo</b> (input image).</figcaption>
+    </figure>
+    <figure>
+      <img src="media/PartA/part1/bells/low_res_logo.png" alt="Edited logo low resolution (Stage 1)">
+      <figcaption><b>Edited (Stage 1, 64×64)</b> using SDEdit.</figcaption>
+    </figure>
+    <figure>
+      <img src="media/PartA/part1/bells/high_res_logo.png" alt="Edited logo high resolution (Stage 2)">
+      <figcaption><b>Edited (Stage 2, 256×256)</b> upsampled result.</figcaption>
+    </figure>
+  </div>
+  <p>Prompt: "a watercolor painting of cherry blossom trees in spring"</p>
+  
     <!-- A2 -->
     <section id="A2" class="card">
       <h3>A2. Optical Illusions</h3>
