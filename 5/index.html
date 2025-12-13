@@ -1104,7 +1104,7 @@
           One-step denoising can clean a digit if some signal remains, but it cannot <i>generate</i> from pure noise.
           Flow matching fixes this by learning a continuous-time transport from noise to data.
           I implement a time-conditioned UNet that takes <code class="inline">(x<sub>t</sub>, t)</code> as input and predicts a
-          velocity field. In <code class="inline">jeff_b.ipynb</code>, I inject time information using an MLP/FCBlock that
+          velocity field. I inject time information using an MLP/FCBlock that
           maps the scalar <code class="inline">t ∈ [0, 1]</code> into a feature embedding that conditions the UNet blocks.
         </p>
   
