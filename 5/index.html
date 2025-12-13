@@ -960,48 +960,300 @@
   </div>
   <p>Prompt: "a watercolor painting of cherry blossom trees in spring"</p>
   
-    <!-- A2 -->
-    <section id="A2" class="card">
-      <h3>A2. Optical Illusions</h3>
-
-      <h3>A2.1 Visual Anagrams</h3>
+    <!-- ========================= PART B ========================= -->
+<section id="partB">
+    <h2>Part B — Flow Matching from Scratch</h2>
+  
+    <p>
+      In Part B, I train a generative model on <b>MNIST</b> from scratch. I start with a warm-up task:
+      implement a lightweight <b>single-step denoising UNet</b> and train it to map a noisy digit back to
+      a clean digit using an L2 reconstruction loss. :contentReference[oaicite:1]{index=1}
+      Then I move to <b>flow matching</b>, where the UNet learns a <i>time-dependent velocity field</i> that
+      transports samples from a simple noise distribution to the data distribution via ODE integration.
+    </p>
+  
+    <!-- ========================= B1 ========================= -->
+    <section id="B1" class="card">
+      <h3>B1. Train a Single-Step Denoising UNet</h3>
+  
+      <h4>B1.1 Implementing the UNet</h4>
       <p>
-        A visual anagram is a single generated image that can be interpreted as two different concepts under two different “views” (e.g., flipped/rotated).
-        The key trick is to compute denoising guidance under both views at every timestep and then combine the resulting noise predictions into a single update.
-        This forces the final image to simultaneously satisfy both prompts, but in different viewing conditions.
+        I implemented the UNet architecture specified in the handout using a small set of reusable tensor
+        operations: <code class="inline">Conv</code> (resolution-preserving), <code class="inline">DownConv</code>
+        (stride-2 downsample), <code class="inline">UpConv</code> (transpose-conv upsample),
+        <code class="inline">Flatten</code> (avgpool 7×7 → 1×1 bottleneck), <code class="inline">Unflatten</code>
+        (1×1 → 7×7), and <code class="inline">Concat</code> for skip connections. :contentReference[oaicite:2]{index=2}
       </p>
+  
+      <ul>
+        <li>
+          <b>Encoder (down path):</b> progressively reduces spatial resolution while increasing channels.
+          This lets the network capture larger receptive fields and global digit structure.
+        </li>
+        <li>
+          <b>Bottleneck:</b> the <code class="inline">Flatten</code> step compresses the 7×7 feature map into a
+          1×1 representation, forcing the model to summarize global information.
+        </li>
+        <li>
+          <b>Decoder (up path):</b> upsamples back to 28×28, using <b>skip connections</b> to re-inject
+          fine-grained spatial details (strokes/edges) from earlier layers.
+        </li>
+      </ul>
+  
+      <p class="muted">
+        <b>Why UNet?</b> For denoising, we need both (1) global context (what digit is it / overall shape)
+        and (2) local detail (clean strokes). UNet’s multi-scale pathway + skip connections is a strong
+        inductive bias for this.
+      </p>
+  
+      <h4>B1.2 Using the UNet to Train a Denoiser</h4>
+      <p>
+        To train the one-step denoiser, I generate noisy/clean pairs by corrupting clean MNIST images
+        with Gaussian noise:
+        <code class="inline">z = x + σ · ε</code>, where <code class="inline">ε ~ N(0, I)</code>.
+        The network <code class="inline">Dθ(z)</code> is trained to directly predict <code class="inline">x</code>
+        using an L2 loss:
+        <code class="inline">E[ || Dθ(z) − x ||² ]</code>. :contentReference[oaicite:3]{index=3}
+      </p>
+
       <div class="grid">
         <figure>
-          <img src="media/PartA/part2/anagrams_viewA.png" alt="Anagram view A">
-          <figcaption>View A (e.g., upright): guided by Prompt A.</figcaption>
-        </figure>
-        <figure>
-          <img src="media/PartA/part2/anagrams_viewB.png" alt="Anagram view B">
-          <figcaption>View B (e.g., flipped/rotated): same image becomes Prompt B.</figcaption>
+          <img src="media/PartB/1_2_0_noisy.png" alt="B1 denoising examples">
+          <figcaption> Visualization of the noisy images</figcaption>
         </figure>
       </div>
-
-      <h3>A2.2 Hybrid Images (Diffusion Edition)</h3>
+  
+      <h4>B1.2.1 Training</h4>
       <p>
-        Hybrid images combine low-frequency structure from one concept with high-frequency details from another.
-        In the diffusion setting, the idea is to make different frequency bands “agree” with different prompts during sampling.
-        The low-frequency component stabilizes global layout (pose, silhouette, composition) while the high-frequency component injects fine textures and edges.
+        During training I fix a noise level (e.g. <code class="inline">σ = 0.5</code>) and repeatedly sample
+        batches of MNIST digits, corrupt them into <code class="inline">z</code>, and optimize the UNet to
+        minimize reconstruction error. This setup forces the model to learn a “typical” denoising transform
+        for that corruption strength.
       </p>
+  
       <div class="grid">
         <figure>
-          <img src="media/PartA/part2/hybrid_low.png" alt="Hybrid low">
-          <figcaption>Low-frequency prompt influence (dominant when viewed from afar / blurred).</figcaption>
+          <img src="media/PartB/1_2_1_training_curve.png" alt="B1 training loss curve">
+          <figcaption>Training loss curve for the single-step denoiser.</figcaption>
         </figure>
         <figure>
-          <img src="media/PartA/part2/hybrid_high.png" alt="Hybrid high">
-          <figcaption>High-frequency prompt influence (dominant when viewed closely).</figcaption>
+          <img src="media/PartB/1_2_1_training_e1.png" alt= "Training examples at epoch 1">
+          <figcaption>Results on the test set with noise level 0.5 after the first epoch</figcaption>
         </figure>
         <figure>
-          <img src="media/PartA/part2/hybrid_final.png" alt="Hybrid final">
-          <figcaption>Final hybrid image and qualitative evaluation at multiple viewing distances.</figcaption>
-        </figure>
+            <img src="media/PartB/1_2_1_training_e5.png" alt= "Training examples at epoch 5">
+            <figcaption>Results on the test set with noise level 0.5 after the 5th epoch</figcaption>
+          </figure>
+      </div>
+  
+      <p class="muted">
+        <b>What to look for:</b> Early in training the output is blurry/averaged because the model only
+        learns coarse structure first. As training progresses, strokes sharpen and background noise is
+        suppressed more consistently.
+      </p>
+  
+      <h4>B1.2.2 Out-of-Distribution (OOD) Testing</h4>
+      <p>
+        After training at a fixed σ, I evaluate robustness by testing the denoiser on noise levels it
+        was <b>not</b> trained on (smaller σ = easier, larger σ = harder). This reveals whether the model
+        learned a generally useful denoising prior or whether it overfit to a specific corruption strength.
+      </p>
+  
+      <div class="grid">
         <figure>
-          <img src="media/PartA/part2/hybrid_multiscale.png" alt="Hybrid multiscale">
-          <figcaption>Multi-scale view (zoomed out vs zoomed in) to demonstrate the illusion.</figcaption>
+          <img src="media/PartB/1_2_2.png" alt="B1 OOD sigma sweep">
+          <figcaption>OOD sweep across σ values (increasing corruption strength).</figcaption>
         </figure>
       </div>
+  
+      <p class="muted">
+        <b>Expected behavior:</b> For σ lower than training, outputs should look clean (often slightly
+        oversmoothed). For σ higher than training, the model often fails by hallucinating ambiguous
+        strokes or collapsing to “average digit-like” blobs because too much information is destroyed.
+      </p>
+  
+      <h4>B1.2.3 Denoising Pure Noise</h4>
+      <p>
+        I also test the extreme case: input is <b>pure Gaussian noise</b> (no underlying digit), and I apply
+        the denoiser anyway. This is a stress test: a single-step denoiser is <b>not</b> trained to be a
+        full generative model, so it typically does not converge to realistic samples from pure noise.
+        Instead, it tends to produce faint digit-like textures or unstable artifacts.
+      </p>
+  
+      <div class="grid">
+        <figure>
+          <img src="media/PartB/1_2_3_loss_curve.png" alt="Training loss curve">
+          <figcaption>Training loss curve for the single-step denoiser.</figcaption>
+        </figure>
+        <figure>
+            <img src="media/PartB/1_2_3_results_epoch1.png" alt="Results on the test set with noise level 0.5 after the first epoch">
+            <figcaption>Results on the test set with noise level 0.5 after the first epoch</figcaption>
+          </figure>
+          <figure>
+            <img src="media/PartB/1_2_3_results_epoch5.png" alt="Results on the test set with noise level 0.5 after the 5th epoch">
+            <figcaption>Results on the test set with noise level 0.5 after the 5th epoch</figcaption>
+          </figure>
+      </div>
+    </section>
+  
+    <section id="B2" class="card">
+        <h3>Part 2. Training a Flow Matching Model</h3>
+  
+        <h4>2.1 Adding Time Conditioning to UNet</h4>
+        <p>
+          One-step denoising can clean a digit if some signal remains, but it cannot <i>generate</i> from pure noise.
+          Flow matching fixes this by learning a continuous-time transport from noise to data.
+          I implement a time-conditioned UNet that takes <code class="inline">(x<sub>t</sub>, t)</code> as input and predicts a
+          velocity field. In <code class="inline">jeff_b.ipynb</code>, I inject time information using an MLP/FCBlock that
+          maps the scalar <code class="inline">t ∈ [0, 1]</code> into a feature embedding that conditions the UNet blocks.
+        </p>
+  
+        <h4>2.2 Training the UNet (Flow Matching Objective)</h4>
+        <p>
+          For each batch of clean digits <code class="inline">x<sub>1</sub></code>, I sample a noise image
+          <code class="inline">x<sub>0</sub> ~ N(0, I)</code> and a random time <code class="inline">t ~ Uniform(0, 1)</code>.
+          I construct the interpolated point
+          <code class="inline">x<sub>t</sub> = (1 − t) x<sub>0</sub> + t x<sub>1</sub></code>.
+          The target velocity for this simple linear path is constant:
+          <code class="inline">v<sub>target</sub> = x<sub>1</sub> − x<sub>0</sub></code>.
+          The network predicts <code class="inline">v<sub>θ</sub>(x<sub>t</sub>, t)</code>, and I train with MSE
+          <code class="inline">||v<sub>θ</sub> − v<sub>target</sub>||<sub>2</sub><sup>2</sup></code>.
+        </p>
+        <div class="grid">
+            <figure>
+                <img src="media/PartB/2_2_loss_curve.png" alt="B2.2 time-conditioned training loss curve">
+                <figcaption>Training loss curve for time-conditioned flow matching.</figcaption>
+              </figure>
+        </div>
+  
+        <h4>2.3 Sampling from the Time-Conditioned UNet</h4>
+        <p>
+          I train the time-conditioned model with the recommended settings: batch size 64, hidden channels
+          <code class="inline">D = 64</code>, and Adam with an initial learning rate <code class="inline">1e−2</code>
+          plus an exponential LR decay schedule that drops by 10× over 10 epochs.
+          To <b>sample</b>, I start from <code class="inline">x<sub>0</sub> ~ N(0, I)</code> and numerically integrate the learned
+          velocity field from <code class="inline">t = 0</code> to <code class="inline">t = 1</code> using
+          <code class="inline">num_ts = 50</code> steps (Euler updates). Each step applies:
+          <code class="inline">x ← x + (Δt) · v<sub>θ</sub>(x, t)</code>.
+          Over the trajectory, samples gradually sharpen from noise into digit-like structure.
+        </p>
+  
+        <div class="grid">
+          <figure>
+            <img src="media/PartB/2_2_results_epoch1.png" alt="B2.3 samples after epoch 1">
+            <figcaption>Samples from the time-conditioned model after epoch 1.</figcaption>
+          </figure>
+          <figure>
+            <img src="media/PartB/2_2_results_epoch5.png" alt="B2.3 samples after epoch 5">
+            <figcaption>Samples from the time-conditioned model after epoch 10 (digits become sharper and more coherent).</figcaption>
+          </figure>
+          <figure>
+            <img src="media/PartB/2_2_results_epoch10.png" alt="B2.3 samples after epoch 10">
+            <figcaption>Samples from the time-conditioned model after epoch 10 (digits become sharper and more coherent).</figcaption>
+          </figure>
+        </div>
+  
+        <h4>2.4 Adding Class-Conditioning to UNet</h4>
+        <p>
+          Next, I add label information so the model can generate a <b>specific digit class</b>.
+          In the notebook, I implement <code class="inline">ClassConditionalUNet</code> by embedding the digit label
+          <code class="inline">y ∈ {0,…,9}</code> and injecting it (along with the time embedding) into the UNet.
+          This changes the learned vector field to <code class="inline">v<sub>θ</sub>(x<sub>t</sub>, t, y)</code>.
+        </p>
+  
+        <h4>2.5 Training the UNet (Class Conditioning)</h4>
+        <p>
+          Training mirrors the time-only setup, except the UNet also receives the class label.
+          I keep the same core hyperparameters (batch size 64, <code class="inline">D = 64</code>, Adam) and train for 10 epochs
+          with exponential LR decay from <code class="inline">1e−2</code>.
+          During training I periodically sample a grid of digits by fixing labels and sampling different noise seeds.
+        </p>
+        <div class="grid">
+            <figure>
+                <img src="media/PartB/2_6_loss_curve.png" alt="2.5 class-conditioned training loss curve">
+                <figcaption>Training loss curve for the class-conditioned flow-matching model.</figcaption>
+              </figure>
+        </div>
+  
+        <h4>2.6 Sampling from the Class-Conditioned UNet + CFG</h4>
+        <p>
+          To strengthen class fidelity at sampling time, I use <b>classifier-free guidance</b>.
+          The idea is to compute both an unconditional velocity and a conditional velocity, then interpolate:
+          <code class="inline">v<sub>guided</sub> = v<sub>uncond</sub> + s · (v<sub>cond</sub> − v<sub>uncond</sub>)</code>.
+          In practice, this requires the model to support unconditional behavior, which I implement via
+          <b>label dropout</b> during training: with some probability I replace <code class="inline">y</code> with a special “null”
+          label so the same network learns both modes.
+        </p>
+  
+        <div class="grid">
+            <figure>
+              <img src="media/PartB/2_6_results_epoch1.png" alt="2.6 samples epoch 1">
+              <figcaption>Class-conditioned samples after epoch 1 (labels start to control coarse shape).</figcaption>
+            </figure>
+            <figure>
+              <img src="media/PartB/2_6_results_epoch5.png" alt="2.6 samples epoch 5">
+              <figcaption>Class-conditioned samples after epoch 5 (labels start to control coarse shape).</figcaption>
+            </figure>
+              <figure>
+                  <img src="media/PartB/2_6_results_epoch10.png" alt="2.6 samples epoch 10">
+                  <figcaption>Class-conditioned samples after epoch 10 (stronger class fidelity + sharper strokes).</figcaption>
+              </figure>
+          </div>
+      </section>
+  
+      <!-- ========================= B4 ========================= -->
+      <section id="B4" class="card">
+        <h3>Bells &amp; Whistles (Part B / CS280A)</h3>
+  
+        <h4>B4.1 Training a Class-Conditioned Model without LR Scheduler</h4>
+        <p>
+          As an ablation, I retrain the class-conditioned model using a <b>constant</b> learning rate
+          (<code class="inline">1e−3</code>) and remove the exponential scheduler. This tests whether the scheduler is important
+          for stability and final sample quality. In my notebook, I compare the loss curve and sample grids at epochs
+          1, 5, and 10.
+        </p>
+  
+        <h4>B4.2 “Better” Time-Only UNet (More Capacity + Longer Training)</h4>
+        <p>
+          I also improved the time-conditioned model by (1) increasing capacity
+          <code class="inline">D: 64 → 128</code> and (2) training longer (<code class="inline">10 → 20</code> epochs) with a smaller
+          learning rate (<code class="inline">1e−3</code>) for stability. I then generate a larger grid of samples (4×10)
+          to qualitatively evaluate diversity and sharpness.
+        </p>
+  
+        <div class="grid">
+          <figure>
+            <img src="media/PartB/bells_epoch1.png" alt="results after the first epoch">
+            <figcaption>Results after the first epoch.</figcaption>
+          </figure>
+          <figure>
+            <img src="media/PartB/bells_epoch5.png" alt="results after the 5th epoch">
+            <figcaption>Results after the 5th epoch.</figcaption>
+          </figure>
+          <figure>
+            <img src="media/PartB/bells_epoch10.png" alt="results after the 10th epoch">
+            <figcaption>Results after the 10th epoch.</figcaption>
+          </figure>
+        </div>
+      </section>
+    </section>
+    <!-- ========================= /PART B ========================= -->
+  
+    <!-- ========================= WHAT I LEARNED ========================= -->
+    <section id="learned" class="card">
+      <h2>What I Learned</h2>
+      <ul>
+        <li>
+          <b>Single-step denoising is not a generator.</b> When the input contains no information (pure noise),
+          MSE training encourages regression toward an average digit, motivating iterative generative dynamics.
+        </li>
+        <li>
+          <b>Flow matching turns generation into learning a vector field.</b> By training a time-conditioned UNet to predict
+          the velocity along an interpolation path, sampling becomes integrating an ODE from noise to data.
+        </li>
+        <li>
+          <b>Conditioning matters.</b> Adding class conditioning and CFG can significantly improve class fidelity, but guidance
+          must be tuned to balance fidelity vs diversity.
+        </li>
+      </ul>
+    </section>
